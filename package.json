@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "tauri": "tauri",
+    "package:windows": "tauri build --bundles nsis",
     "check": "tsc --noEmit && vitest run && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo test --manifest-path src-tauri/Cargo.toml && vite build"
   },
   "dependencies": {

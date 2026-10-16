@@ -11,6 +11,13 @@ App-owned data must remain under `D:/QuickTranslate/Data` (SQLite, WebView data 
 5. Configure a local OpenAI compatible service with a unique ID (for example `local-ollama`), endpoint `http://localhost:11434/v1`, a locally installed model, and 本地服务 enabled. Save, select 敏感模式 · 仅本地 and save settings. Confirm the default-service and Translate selectors contain only local services. A remote HTTPS endpoint marked local must be rejected. Also test `127.0.0.1` and `[::1]` endpoints. With no local service enabled, translation must explain that a local service is required.
 6. Disconnect networking or stop the chosen server. Translate and verify a readable error with retry, preserving source text. Restore networking/server, retry, and confirm a result can be copied. Confirm sensitive mode never sends text to online fallback services.
 
+## Packaging and D-drive paths
+
+1. Set `CARGO_HOME`, `RUSTUP_HOME`, `TEMP`/`TMP`, npm cache and the build process's `LOCALAPPDATA` to the D-drive locations in README. Run `npm run check`, then `npm run tauri -- build`. Confirm an NSIS installer appears in the project's `src-tauri/target/release/bundle/nsis` directory on D.
+2. Ask the user to confirm the application install directory before running the installer. Run it interactively, select the confirmed D-drive directory at the directory page, and verify current-user installation needs no elevation. The installer intentionally does not install WebView2; verify the existing Runtime prerequisite first.
+3. Launch the installed program and verify the translator window and tray icon appear. Verify executable and uninstaller live at the selected D-drive path, SQLite at `D:/QuickTranslate/Data/quick-translate.sqlite3`, and WebView files under `D:/QuickTranslate/Data/WebView`. The app must not silently fall back to C when D is unavailable.
+4. Verify project `dist`, Rust `target`, Rust toolchain/cache, npm cache, bundler cache and temporary files stay on D. Windows-managed Credential Manager, registry and Start Menu entries remain system-managed; they are not app-owned data directories.
+
 ## Screenshot and cancellation
 
 1. Click 截图翻译, select a text region, edit the OCR confirmation, verify source/target choices and press 翻译. Confirm recognized text enters the translator; press 翻译 there to send it. Copy the final result using 复制译文.
@@ -34,4 +41,8 @@ App-owned data must remain under `D:/QuickTranslate/Data` (SQLite, WebView data 
 
 ## Acceptance status
 
-Task 7 automated tests use fake secure storage and shortcut registration. Native tray clicks, operating-system shortcut conflicts, close/reopen behavior and real Credential Manager interaction still require manual verification on Windows. Earlier Task 6 OCR manual observations and multi-display limitations are recorded in its report.
+Task 8 automated verification (`npm run check`) passed on 2026-10-17: 26 UI tests, 59 Rust tests and 2 compile-fail doctests. This includes real loopback HTTP + temporary SQLite application service integration for manual translation, history policy and edited OCR confirmation routed to a local provider in sensitive mode. No live credentials or external services are needed for these tests.
+
+The final `npm run tauri -- build` passed on 2026-10-17 and produced `Quick Translate_0.1.0_x64-setup.exe` (3,825,248 bytes; SHA-256 `BB5DFAE3C006B0AA5EA1BF765DA07470A709E4625D222F1D6CAB0331D5225E2E`). Generated NSIS source confirms `currentUser`, `RequestExecutionLevel user` and an interactive directory page. The installer is unsigned. Bundler cache was verified under the project's D-drive `src-tauri/target/.tauri/NSIS`, with no `C:/Users/july/AppData/Local/tauri` directory after the final build. These build/source checks do not establish successful installation.
+
+Native installation is intentionally pending the user's installation-path confirmation. Current-user/no-elevation installation, installed launch/tray, real Credential Manager interaction, operating-system shortcut conflicts, live network recovery and live provider behavior are still unverified. Native tray/shortcut and cancellation fixes from Task 7 must also be exercised on the packaged application. The earlier Task 6 report records successful single-monitor overlay, Escape, Chinese OCR and edit/confirm tests, plus the expected English language-pack error. It does not establish multi-monitor/mixed-DPI correctness or successful English OCR; those remain pending the required hardware/language pack. Automated checks do not convert these pending items into passes.
