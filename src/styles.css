@@ -120,3 +120,14 @@ button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2p
   .translation-workspace { grid-template-columns: 1fr; }
   .mode-badge { max-width: 190px; }
 }
+.capture-toolbar { display: flex; justify-content: flex-end; padding: 10px 20px 0; }
+.capture-toolbar button { border: 1px solid #147b82; color: #14666c; background: #fff; border-radius: 5px; padding: 6px 12px; }
+.screenshot-error { margin: 12px 20px 0; }
+.screenshot-result { max-width: 800px; margin: 16px auto; padding: 0 20px; display: grid; gap: 12px; font-size: 13px; }
+.screenshot-result > label { font-weight: 600; color: #53676e; }
+.screenshot-result textarea { width: 100%; min-height: 180px; resize: vertical; border: 1px solid #d3dde0; border-radius: 6px; padding: 10px; background: #fff; color: #223c41; }
+.screenshot-result .translate-heading button, .screenshot-result > button { border: 1px solid #d3dde0; border-radius: 5px; background: #fff; padding: 6px 10px; color: #286970; }
+.screenshot-overlay { position: fixed; inset: 0; background: #111; overflow: hidden; cursor: crosshair; }
+.screenshot-image { display: block; width: 100vw; height: 100vh; user-select: none; touch-action: none; }
+.screenshot-selection { position: absolute; border: 2px solid #fff; background: #1a858b33; box-shadow: 0 0 0 9999px #0007; pointer-events: none; }
+.screenshot-cancel { position: absolute; right: 16px; top: 16px; width: 32px; height: 32px; border: 1px solid #fff8; border-radius: 4px; background: #111b; color: #fff; font-size: 24px; line-height: 1; }
