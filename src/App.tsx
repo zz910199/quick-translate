@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { beginScreenshotTranslation, cancelScreenshotTranslation, getScreenshotDisplay, getTranslationSelection, listLanguages,
+import { beginScreenshotTranslation, cancelScreenshotTranslation, getScreenshotDisplay, getSettings, getTranslationSelection, listLanguages,
   recognizeScreenshotRegion, saveTranslationSelection, type AppErrorDto, type CapturedDisplayDto,
   type LanguageOptionDto, type OcrResultDto, type ScreenshotRect, type TranslationSelectionDto } from "./lib/commands";
 import { ScreenshotOverlay } from "./features/screenshot/ScreenshotOverlay";
 import { ScreenshotResult } from "./features/screenshot/ScreenshotResult";
 import { TranslateView } from "./features/translate/TranslateView";
+import { SettingsView } from "./features/settings/SettingsView";
+import { HistoryView } from "./features/history/HistoryView";
 
 const views = ["Translate", "History", "Settings"] as const;
 type View = (typeof views)[number];
@@ -57,6 +59,8 @@ function MainApp() {
   const [selection, setSelection] = useState<TranslationSelectionDto | null>(null);
   const [screenshotError, setScreenshotError] = useState<AppErrorDto | null>(null);
   const [capturing, setCapturing] = useState(false);
+  const [desktopError, setDesktopError] = useState<AppErrorDto | null>(null);
+  const captureStarting = useRef(false);
   const captureIds = useRef(new Set<string>());
   const pendingCaptureEvents = useRef<OcrEvent[] | null>(null);
 
@@ -90,7 +94,10 @@ function MainApp() {
     return () => { active = false; captureIds.current.clear(); void success.then(unlisten => unlisten()); void failure.then(unlisten => unlisten()); };
   }, [receiveOcrEvent]);
 
-  async function startScreenshot() {
+  const startScreenshot = useCallback(async () => {
+    if (captureStarting.current) return;
+    captureStarting.current = true;
+    setActiveView("Translate");
     captureIds.current.clear();
     pendingCaptureEvents.current = [];
     setScreenshotError(null); setOcrResult(null); setCapturing(true);
@@ -101,8 +108,14 @@ function MainApp() {
       if (event) receiveOcrEvent(event);
     }
     catch (error) { setScreenshotError(error as AppErrorDto); }
-    finally { pendingCaptureEvents.current = null; setCapturing(false); }
-  }
+    finally { pendingCaptureEvents.current = null; setCapturing(false); captureStarting.current = false; }
+  }, [receiveOcrEvent]);
+  useEffect(() => {
+    let active = true;
+    const requested = listen("screenshot-requested", () => { if (active) void startScreenshot(); });
+    void getSettings().then(settings => {if(active)setDesktopError(settings.shortcutError);}).catch(() => undefined);
+    return () => {active=false;void requested.then(unlisten => unlisten());};
+  }, [startScreenshot]);
   async function confirm(text: string, source: string, target: string) {
     try {
       if (selection && source && target) await saveTranslationSelection(source, target, selection.providerId);
@@ -129,6 +142,9 @@ function MainApp() {
         ))}
       </nav>
       <main className="main-panel" aria-label={activeView}>
+        {desktopError && <div role="alert" className="inline-error"><span>{desktopError.message}</span><button onClick={() => {setActiveView("Settings");setDesktopError(null);}}>打开设置</button></div>}
+        {activeView === "Settings" && <SettingsView />}
+        {activeView === "History" && <HistoryView />}
         {activeView === "Translate" && <>
           <div className="capture-toolbar"><button type="button" disabled={capturing} onClick={() => void startScreenshot()}>截图翻译</button></div>
           {screenshotError && <div className="inline-error screenshot-error" role="alert"><span>{screenshotError.message || "截图失败，请重试。"}</span><button type="button" onClick={() => void startScreenshot()}>重新截图</button></div>}

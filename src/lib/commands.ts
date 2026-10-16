@@ -23,3 +23,17 @@ export const getScreenshotDisplay = (displayId: string) => invoke<CapturedDispla
 export const recognizeScreenshotRegion = (displayId: string, rect: ScreenshotRect) =>
   invoke<OcrResultDto>("recognize_screenshot_region", { displayId, rect });
 export const cancelScreenshotTranslation = (displayId: string) => invoke<void>("cancel_screenshot_translation", { displayId });
+
+export interface ProviderConfigInput { id: string; displayName: string; endpoint: string | null; model: string | null; isLocal: boolean; enabled: boolean }
+export interface ProviderSettingsDto extends ProviderConfigInput { configured: boolean }
+export interface SettingsInput { source: string; target: string; providerId: string; privacyMode: "OnlinePreferred" | "LocalOnly"; fallbackEnabled: boolean; historyEnabled: boolean; shortcut: string }
+export interface SettingsDto extends SettingsInput { providers: ProviderSettingsDto[]; shortcutError: AppErrorDto | null }
+export interface HistoryEntryDto { id: number; sourceText: string; translatedText: string; source: string; target: string; providerId: string; timestamp: string }
+export const getSettings = () => invoke<SettingsDto>("get_settings");
+export const saveSettings = (settings: SettingsInput) => invoke<void>("save_settings", { settings });
+export const saveProviderConfig = (config: ProviderConfigInput) => invoke<void>("save_provider_config", { config });
+export const setProviderSecret = (providerId: string, secret: string) => invoke<void>("set_provider_secret", { providerId, secret });
+export const deleteProviderSecret = (providerId: string) => invoke<void>("delete_provider_secret", { providerId });
+export const listHistory = () => invoke<HistoryEntryDto[]>("list_history");
+export const deleteHistoryEntry = (id: number) => invoke<void>("delete_history_entry", { id });
+export const clearHistory = () => invoke<void>("clear_history");

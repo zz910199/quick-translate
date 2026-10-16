@@ -20,6 +20,7 @@ vi.mock("../src/lib/commands", () => ({
   saveTranslationSelection: vi.fn().mockResolvedValue(undefined), translateText: vi.fn(),
   getScreenshotDisplay: vi.fn(), cancelScreenshotTranslation: vi.fn().mockResolvedValue(undefined),
   beginScreenshotTranslation: vi.fn().mockResolvedValue([]),
+  getSettings: vi.fn().mockResolvedValue({source:"en",target:"zh-CN",providerId:"mymemory",privacyMode:"OnlinePreferred",fallbackEnabled:true,historyEnabled:true,shortcut:"Ctrl+Shift+T",providers:[],shortcutError:null}), listHistory: vi.fn().mockResolvedValue([]),
 }));
 
 afterEach(() => { cleanup(); handlers.clear(); });
@@ -113,5 +114,14 @@ describe("application shell", () => {
     completeBegin([{id:"s1--display-0",originX:0,originY:0,scaleFactor:1,previewDataUrl:"data:image/jpeg;base64,AA==",width:10,height:10}]);
     expect(await screen.findByLabelText("识别文字")).toHaveValue("early result");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+  it("routes desktop screenshot requests through begin and tracks returned session IDs", async () => {
+    vi.mocked(commands.beginScreenshotTranslation).mockResolvedValueOnce([{id:"tray--display-0",originX:0,originY:0,scaleFactor:1,previewDataUrl:"data:image/jpeg;base64,AA==",width:10,height:10}]);
+    render(<App />);
+    await waitFor(() => expect(handlers.has("screenshot-requested")).toBe(true));
+    handlers.get("screenshot-requested")?.({payload:null});
+    await waitFor(() => expect(screen.getByRole("button",{name:"截图翻译"})).toBeEnabled());
+    handlers.get("screenshot-ocr-result")?.({payload:{displayId:"tray--display-0",text:"tray text",confidence:null,blocks:[]}});
+    expect(await screen.findByLabelText("识别文字")).toHaveValue("tray text");
   });
 });

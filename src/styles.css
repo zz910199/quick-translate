@@ -131,3 +131,19 @@ button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2p
 .screenshot-image { display: block; width: 100vw; height: 100vh; user-select: none; touch-action: none; }
 .screenshot-selection { position: absolute; border: 2px solid #fff; background: #1a858b33; box-shadow: 0 0 0 9999px #0007; pointer-events: none; }
 .screenshot-cancel { position: absolute; right: 16px; top: 16px; width: 32px; height: 32px; border: 1px solid #fff8; border-radius: 4px; background: #111b; color: #fff; font-size: 24px; line-height: 1; }
+.settings-view, .history-view { max-width: 1000px; padding: 16px 20px; margin: auto; font-size: 13px; }
+.settings-view h2, .history-view h2 { font-size: 15px; }
+.settings-view fieldset { border: 1px solid #d3dde0; border-radius: 8px; margin: 14px 0; background: #fff; padding: 14px; min-width: 0; }
+.settings-view legend { color: #286970; font-weight: 600; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 12px; margin: 12px 0; }
+.settings-view label, .history-detail label { display: grid; gap: 6px; }
+.settings-view input:not([type=checkbox]), .settings-view select, .history-detail textarea { width: 100%; border: 1px solid #d3dde0; border-radius: 5px; background: white; padding: 7px; color: #23353a; font: inherit; }
+.settings-view .check-label { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+.settings-view button, .history-view button { border: 1px solid #bdd4d7; border-radius: 5px; background: #edf5f5; color: #286970; padding: 6px 10px; }
+.settings-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.history-list { list-style: none; padding: 0; display: grid; gap: 12px; }
+.history-list li, .history-detail, .history-confirm { border: 1px solid #d3dde0; border-radius: 8px; padding: 12px; background: #fff; overflow-wrap: anywhere; }
+.history-text p { margin: 0 0 7px; white-space: pre-wrap; }
+.history-text small { color: #627277; }
+.history-detail textarea { min-height: 80px; resize: vertical; }
+.history-detail button, .history-confirm button { margin-right: 8px; }
