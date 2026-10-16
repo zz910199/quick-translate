@@ -1,6 +1,6 @@
 use crate::{
     commands::translation::{AppErrorDto, AppServices},
-    platform::screen_capture::{CapturedDisplay, ScreenshotRect},
+    platform::screen_capture::{wait_for_compositor, CapturedDisplay, ScreenshotRect},
     platform::tray::open_translator,
     services::ocr::{OcrError, OcrResult, OcrService},
 };
@@ -102,16 +102,33 @@ pub async fn begin_screenshot_translation(
 ) -> Result<Vec<CapturedDisplayDto>, AppErrorDto> {
     close_overlays(&app);
     let service = Arc::clone(state.inner());
-    let displays = tauri::async_runtime::spawn_blocking(move || service.begin())
-        .await
-        .map_err(|_| {
-            open_translator(&app);
-            app_error(OcrError::CaptureUnavailable)
-        })?
-        .map_err(|error| {
-            open_translator(&app);
-            app_error(error)
-        })?;
+    let capture_app = app.clone();
+    let displays = tauri::async_runtime::spawn_blocking(move || {
+        service.begin_with_preparation(|| {
+            let window = capture_app
+                .get_webview_window("main")
+                .ok_or(OcrError::CaptureUnavailable)?;
+            window.hide().map_err(|_| OcrError::CaptureUnavailable)?;
+            // hide() queues a UI message; this synchronous getter waits for that queue
+            // before the compositor flush, so capture cannot race the hide request.
+            if window
+                .is_visible()
+                .map_err(|_| OcrError::CaptureUnavailable)?
+            {
+                return Err(OcrError::CaptureUnavailable);
+            }
+            wait_for_compositor().map_err(|_| OcrError::CaptureUnavailable)
+        })
+    })
+    .await
+    .map_err(|_| {
+        open_translator(&app);
+        app_error(OcrError::CaptureUnavailable)
+    })?
+    .map_err(|error| {
+        open_translator(&app);
+        app_error(error)
+    })?;
     let dtos: Vec<_> = displays.into_iter().map(CapturedDisplayDto::from).collect();
     for display in &dtos {
         if !state.is_current(&display.id) {

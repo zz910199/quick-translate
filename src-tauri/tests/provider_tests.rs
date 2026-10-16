@@ -190,12 +190,39 @@ async fn provider_tests_deepl_reads_keyring_and_sends_authentication_header() {
         .contains("authorization: deepl-auth-key super-secret-key\r\n"));
     let body: Value = serde_json::from_str(received.split("\r\n\r\n").nth(1).unwrap()).unwrap();
     assert_eq!(body["text"][0], "Hello & 你好");
-    assert_eq!(body["target_lang"], "ZH");
+    assert_eq!(body["target_lang"], "ZH-HANS");
     assert_eq!(
         *secrets.reads.lock().unwrap(),
         vec![(CREDENTIAL_SERVICE.into(), "test-account".into())]
     );
     handle.join().unwrap();
+}
+
+#[tokio::test]
+async fn provider_tests_deepl_preserves_chinese_target_script_in_http_body() {
+    for (target, expected) in [("zh-CN", "ZH-HANS"), ("zh-TW", "ZH-HANT")] {
+        let (url, received, handle) = server(
+            200,
+            "",
+            r#"{"translations":[{"text":"translated"}]}"#,
+            Duration::ZERO,
+        );
+        let request = TranslationRequest::new(
+            "hello".into(),
+            "en".parse().unwrap(),
+            target.parse().unwrap(),
+        )
+        .unwrap();
+        registry(&[config("deepl", &url, false, true)])
+            .translate(&ProviderId::new("deepl"), &request)
+            .await
+            .unwrap();
+        let received = received.recv().unwrap();
+        let body: Value = serde_json::from_str(received.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(body["target_lang"], expected, "target {target}");
+        assert_eq!(body["source_lang"], "EN");
+        handle.join().unwrap();
+    }
 }
 
 #[tokio::test]

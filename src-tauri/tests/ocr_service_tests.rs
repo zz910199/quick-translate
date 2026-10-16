@@ -45,6 +45,70 @@ impl OcrEngine for FakeOcr {
 fn service(result: Result<OcrResult, OcrError>) -> OcrService {
     OcrService::new(Arc::new(FakeCapture), Arc::new(FakeOcr(result)))
 }
+
+#[test]
+fn ocr_service_tests_preparation_cancels_old_ocr_before_hiding_translator() {
+    let service = service(Err(OcrError::Engine));
+    let old = service.begin().unwrap().remove(0).id;
+    let displays = service
+        .begin_with_preparation(|| {
+            assert!(!service.is_current(&old));
+            assert!(
+                !service.finish(&old),
+                "old OCR must not reopen the translator"
+            );
+            Ok(())
+        })
+        .unwrap();
+    assert!(service.is_current(&displays[0].id));
+}
+
+#[test]
+fn ocr_service_tests_failed_preparation_releases_session_without_capture() {
+    struct NoCapture;
+    impl ScreenCapture for NoCapture {
+        fn capture_all_displays(&self) -> Result<Vec<CapturedDisplay>, CaptureError> {
+            panic!("desktop must not be captured after a hide/compositor failure");
+        }
+    }
+    let service = OcrService::new(
+        Arc::new(NoCapture),
+        Arc::new(FakeOcr(Err(OcrError::Engine))),
+    );
+    assert_eq!(
+        service
+            .begin_with_preparation(|| Err(OcrError::CaptureUnavailable))
+            .unwrap_err(),
+        OcrError::CaptureUnavailable
+    );
+    assert!(!service.is_current("s1--monitor-1"));
+}
+
+#[test]
+fn ocr_service_tests_capture_observes_successful_preparation() {
+    struct PreparedCapture(Arc<AtomicBool>);
+    impl ScreenCapture for PreparedCapture {
+        fn capture_all_displays(&self) -> Result<Vec<CapturedDisplay>, CaptureError> {
+            if !self.0.load(Ordering::Acquire) {
+                return Err(CaptureError::Unavailable);
+            }
+            FakeCapture.capture_all_displays()
+        }
+    }
+    let prepared = Arc::new(AtomicBool::new(false));
+    let service = OcrService::new(
+        Arc::new(PreparedCapture(prepared.clone())),
+        Arc::new(FakeOcr(Err(OcrError::Engine))),
+    );
+    let displays = service
+        .begin_with_preparation(|| {
+            prepared.store(true, Ordering::Release);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(displays.len(), 1);
+    assert!(service.is_current(&displays[0].id));
+}
 fn run(result: Result<OcrResult, OcrError>) -> Result<OcrResult, OcrError> {
     let service = service(result);
     let displays = service.begin().unwrap();

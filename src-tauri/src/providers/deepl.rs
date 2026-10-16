@@ -45,6 +45,13 @@ struct Translation {
 
 fn language(code: &str, target: bool) -> String {
     let upper = code.to_ascii_uppercase();
+    if target {
+        match upper.as_str() {
+            "ZH-CN" => return "ZH-HANS".into(),
+            "ZH-TW" => return "ZH-HANT".into(),
+            _ => {}
+        }
+    }
     if target
         && matches!(
             upper.as_str(),

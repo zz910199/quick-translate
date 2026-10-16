@@ -39,6 +39,26 @@ pub trait ScreenCapture: Send + Sync {
 
 pub struct SystemScreenCapture;
 
+/// Wait for the desktop compositor to present window visibility changes before BitBlt.
+/// Called on the capture worker, never the UI thread.
+#[cfg(windows)]
+pub fn wait_for_compositor() -> Result<(), CaptureError> {
+    #[link(name = "dwmapi")]
+    unsafe extern "system" {
+        fn DwmFlush() -> i32;
+    }
+    if unsafe { DwmFlush() } < 0 {
+        Err(CaptureError::Unavailable)
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+pub fn wait_for_compositor() -> Result<(), CaptureError> {
+    Err(CaptureError::Unavailable)
+}
+
 #[cfg(windows)]
 fn encode_preview(rgba: &[u8], width: u32, height: u32) -> Result<String, CaptureError> {
     use base64::{engine::general_purpose::STANDARD, Engine};

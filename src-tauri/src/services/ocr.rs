@@ -84,6 +84,13 @@ impl OcrService {
     }
 
     pub fn begin(&self) -> Result<Vec<CapturedDisplay>, OcrError> {
+        self.begin_with_preparation(|| Ok(()))
+    }
+
+    pub fn begin_with_preparation(
+        &self,
+        prepare: impl FnOnce() -> Result<(), OcrError>,
+    ) -> Result<Vec<CapturedDisplay>, OcrError> {
         let generation = {
             let mut state = self
                 .state
@@ -102,6 +109,10 @@ impl OcrService {
             });
             generation
         };
+        if let Err(error) = prepare() {
+            self.cancel_generation(generation);
+            return Err(error);
+        }
         let displays = match self.capture.capture_all_displays() {
             Ok(displays) => displays,
             Err(_) => {
