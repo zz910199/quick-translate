@@ -71,7 +71,10 @@ impl TranslationProvider for OpenAiCompatible {
             ],
             "stream": false
         }));
-        if let Some(key) = self.transport.secret(self.secure_store.as_ref(), false)? {
+        if let Some(key) = self.transport.secret(
+            self.secure_store.as_ref(),
+            !self.transport.config.is_local(),
+        )? {
             let mut auth = reqwest::header::HeaderValue::from_str(&format!("Bearer {key}"))
                 .map_err(|_| ProviderError::Authentication)?;
             auth.set_sensitive(true);

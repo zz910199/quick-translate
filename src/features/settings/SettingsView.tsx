@@ -3,7 +3,13 @@ import { deleteProviderSecret, getSettings, listLanguages, saveProviderConfig, s
   type AppErrorDto, type LanguageOptionDto, type ProviderConfigInput, type SettingsDto } from "../../lib/commands";
 import { safeAppError } from "../translate/translate-state";
 
-const blankProvider: ProviderConfigInput = { id: "openai-compatible", displayName: "OpenAI 兼容服务", endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini", isLocal: false, enabled: true };
+const blankProvider = (providers: SettingsDto["providers"] = []): ProviderConfigInput => {
+  const used = new Set(providers.map(provider => provider.id));
+  let suffix = 1;
+  let id = "openai-compatible";
+  while (used.has(id)) id = `openai-compatible-${++suffix}`;
+  return { id, displayName: "OpenAI 兼容服务", endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini", isLocal: false, enabled: true };
+};
 
 export function SettingsView() {
   const [settings, setSettings] = useState<SettingsDto | null>(null);
@@ -13,10 +19,11 @@ export function SettingsView() {
   const [error, setError] = useState<AppErrorDto | null>(null);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [addingProvider, setAddingProvider] = useState(false);
   useEffect(() => {
     let active = true;
     void Promise.all([getSettings(), listLanguages()]).then(([s, ls]) => {
-      if (active) { setSettings(s); setLanguages(ls); setConfig(s.providers[0] ?? blankProvider); setError(s.shortcutError); }
+      if (active) { setSettings(s); setLanguages(ls); setConfig(s.providers[0] ?? blankProvider(s.providers)); setError(s.shortcutError); }
     }).catch(e => { if (active) setError(safeAppError(e)); });
     return () => { active = false; };
   }, []);
@@ -30,7 +37,9 @@ export function SettingsView() {
   const visible = settings?.providers.filter(p => p.enabled && (settings.privacyMode !== "LocalOnly" || p.isLocal)) ?? [];
   const configured = settings?.providers.find(p => p.id === config.id)?.configured ?? false;
   function chooseProvider(id: string) {
-    setConfig(settings?.providers.find(p => p.id === id) ?? { ...blankProvider }); setSecret(""); setStatus("");
+    if (id === "new") { setAddingProvider(true); setConfig(blankProvider(settings?.providers)); }
+    else { setAddingProvider(false); setConfig(settings?.providers.find(p => p.id === id) ?? blankProvider(settings?.providers)); }
+    setSecret(""); setStatus(""); setError(null);
   }
   return <section className="settings-view" aria-label="设置">
     <h2>设置</h2>
@@ -56,7 +65,7 @@ export function SettingsView() {
         await saveSettings({source,target,providerId,privacyMode,fallbackEnabled,historyEnabled,shortcut});
       })}>保存设置</button></fieldset>
       <fieldset disabled={busy}><legend>翻译服务与凭据</legend>
-        <label>配置服务<select value={settings.providers.some(p => p.id === config.id) ? config.id : "new"} onChange={e => chooseProvider(e.target.value)}>{settings.providers.map(p => <option key={p.id} value={p.id}>{p.displayName}</option>)}<option value="new">添加服务…</option></select></label>
+        <label>配置服务<select value={addingProvider ? "new" : config.id} onChange={e => chooseProvider(e.target.value)}>{settings.providers.map(p => <option key={p.id} value={p.id}>{p.displayName}</option>)}<option value="new">添加服务…</option></select></label>
         <div className="settings-grid">
           <label>服务 ID<input value={config.id} onChange={e => {setConfig({...config,id:e.target.value});setSecret("");}} /></label>
           <label>服务名称<input value={config.displayName} onChange={e => setConfig({...config,displayName:e.target.value})} /></label>
@@ -68,8 +77,10 @@ export function SettingsView() {
         <p className="provider-notice">MyMemory 使用 ID mymemory，DeepL 使用 deepl；其他服务使用 OpenAI 兼容协议，需填写模型与服务地址。在线翻译会将原文发送给所选服务。</p>
         <button type="button" onClick={() => void action(async () => {
           const {id,displayName,endpoint,model,isLocal,enabled} = config;
+          if (addingProvider && settings.providers.some(provider => provider.id === id)) throw {code:"configuration",message:"服务 ID 已存在，请使用新的 ID。",retryable:false};
           await saveProviderConfig({id,displayName,endpoint,model,isLocal,enabled});
           const loaded = await getSettings(); setSettings({...loaded, source:settings.source,target:settings.target,privacyMode:settings.privacyMode,historyEnabled:settings.historyEnabled,fallbackEnabled:settings.fallbackEnabled,shortcut:settings.shortcut});
+          setAddingProvider(false); setConfig(loaded.providers.find(provider => provider.id === id) ?? config);
         })}>保存服务</button>
         <p aria-label="密钥状态">{config.id === "mymemory" ? "无需密钥" : configured ? "已配置" : "未配置"}</p>
         <label>API 密钥<input type="password" disabled={config.id === "mymemory"} autoComplete="new-password" value={secret} onChange={e => setSecret(e.target.value)} /></label>

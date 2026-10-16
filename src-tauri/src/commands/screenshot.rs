@@ -1,6 +1,7 @@
 use crate::{
     commands::translation::{AppErrorDto, AppServices},
     platform::screen_capture::{CapturedDisplay, ScreenshotRect},
+    platform::tray::open_translator,
     services::ocr::{OcrError, OcrResult, OcrService},
 };
 use serde::Serialize;
@@ -103,8 +104,14 @@ pub async fn begin_screenshot_translation(
     let service = Arc::clone(state.inner());
     let displays = tauri::async_runtime::spawn_blocking(move || service.begin())
         .await
-        .map_err(|_| app_error(OcrError::CaptureUnavailable))?
-        .map_err(app_error)?;
+        .map_err(|_| {
+            open_translator(&app);
+            app_error(OcrError::CaptureUnavailable)
+        })?
+        .map_err(|error| {
+            open_translator(&app);
+            app_error(error)
+        })?;
     let dtos: Vec<_> = displays.into_iter().map(CapturedDisplayDto::from).collect();
     for display in &dtos {
         if !state.is_current(&display.id) {
@@ -145,6 +152,7 @@ pub async fn begin_screenshot_translation(
                         return Ok(dtos);
                     }
                     state.cancel_session(&display.id);
+                    open_translator(&app);
                     return Err(app_error(OcrError::CaptureUnavailable));
                 }
                 if !state.is_current(&display.id) {
@@ -161,6 +169,7 @@ pub async fn begin_screenshot_translation(
                     return Ok(dtos);
                 }
                 state.cancel_session(&display.id);
+                open_translator(&app);
                 return Err(error);
             }
         }
@@ -226,6 +235,7 @@ pub async fn recognize_screenshot_region(
                 );
             }
         }
+        open_translator(&app);
     }
     close_session_overlays(&app, &event_display_id);
     result
@@ -237,6 +247,9 @@ pub fn cancel_screenshot_translation(
     state: State<'_, Arc<OcrService>>,
     display_id: String,
 ) {
-    state.cancel_session(&display_id);
+    let current = state.cancel_session(&display_id);
     close_session_overlays(&app, &display_id);
+    if current {
+        open_translator(&app);
+    }
 }

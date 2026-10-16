@@ -233,12 +233,17 @@ impl HttpTransport {
         required: bool,
     ) -> Result<Option<String>, ProviderError> {
         match self.config.secret_account() {
-            Some(account) => store
-                .get(CREDENTIAL_SERVICE, account)
-                .map_err(|_| ProviderError::Authentication)?
-                .filter(|key| !key.trim().is_empty())
-                .map(Some)
-                .ok_or(ProviderError::Authentication),
+            Some(account) => {
+                let key = store
+                    .get(CREDENTIAL_SERVICE, account)
+                    .map_err(|_| ProviderError::Authentication)?
+                    .filter(|key| !key.trim().is_empty());
+                if key.is_none() && required {
+                    Err(ProviderError::Authentication)
+                } else {
+                    Ok(key)
+                }
+            }
             None if required => Err(ProviderError::Authentication),
             None => Ok(None),
         }

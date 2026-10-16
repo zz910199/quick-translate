@@ -159,12 +159,14 @@ impl AppServices {
             .filter_map(|p| {
                 let metadata = registry.metadata(p.id())?;
                 let configured = match p.secret_account() {
-                    Some(account) => self
-                        .secure_store
-                        .get(CREDENTIAL_SERVICE, account)
-                        .ok()
-                        .flatten()
-                        .is_some_and(|key| !key.trim().is_empty()),
+                    Some(account) => {
+                        self.secure_store
+                            .get(CREDENTIAL_SERVICE, account)
+                            .ok()
+                            .flatten()
+                            .is_some_and(|key| !key.trim().is_empty())
+                            || p.is_local()
+                    }
                     None => {
                         p.id().as_str() != "deepl"
                             && (p.is_local() || p.id().as_str() == "mymemory")

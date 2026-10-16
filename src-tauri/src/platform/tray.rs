@@ -13,7 +13,6 @@ pub fn open_translator(app: &AppHandle) {
 }
 /// The main window owns capture IDs and early-event buffering for every entry point.
 pub fn request_screenshot(app: &AppHandle) {
-    open_translator(app);
     let _ = app.emit_to("main", "screenshot-requested", ());
 }
 pub fn install(app: &AppHandle) -> tauri::Result<()> {

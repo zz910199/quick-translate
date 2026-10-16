@@ -51,3 +51,23 @@ it("shows a readable shortcut conflict without claiming settings were saved", as
   expect(await screen.findByRole("alert")).toHaveTextContent("快捷键已被占用");
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
 });
+it("creates a distinct service when the default OpenAI ID already exists", async () => {
+  const existing = {id:"openai-compatible",displayName:"Existing",endpoint:"https://existing.test/v1",model:"existing-model",isLocal:false,enabled:true,configured:true};
+  vi.mocked(commands.getSettings).mockResolvedValue({...structuredClone(initial),providers:[...initial.providers,existing]});
+  render(<SettingsView />); await screen.findByLabelText("配置服务");
+  fireEvent.change(screen.getByLabelText("配置服务"), {target:{value:"new"}});
+  expect(screen.getByLabelText("配置服务")).toHaveValue("new");
+  expect(screen.getByLabelText("服务 ID")).toHaveValue("openai-compatible-2");
+  fireEvent.click(screen.getByRole("button", {name:"保存服务"}));
+  await waitFor(() => expect(commands.saveProviderConfig).toHaveBeenCalledWith(expect.objectContaining({id:"openai-compatible-2"})));
+  expect(commands.saveProviderConfig).not.toHaveBeenCalledWith(expect.objectContaining({id:"openai-compatible"}));
+});
+it("rejects an existing ID in add-service mode without overwriting its configuration", async () => {
+  render(<SettingsView />); await screen.findByLabelText("配置服务");
+  fireEvent.change(screen.getByLabelText("配置服务"), {target:{value:"new"}});
+  fireEvent.change(screen.getByLabelText("服务 ID"), {target:{value:"local"}});
+  fireEvent.click(screen.getByRole("button", {name:"保存服务"}));
+  expect(await screen.findByRole("alert")).toHaveTextContent("服务 ID 已存在");
+  expect(commands.saveProviderConfig).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("配置服务")).toHaveValue("new");
+});

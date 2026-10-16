@@ -12,6 +12,12 @@ use quick_translate_lib::{
     storage::{SettingsRepository, SqliteHistoryRepository, SqliteSettingsRepository},
 };
 use std::sync::{Arc, Mutex};
+use std::{
+    io::{Read, Write},
+    net::TcpListener,
+    thread,
+    time::Duration,
+};
 #[derive(Default)]
 struct Secrets(Mutex<Option<String>>);
 impl SecureStore for Secrets {
@@ -62,6 +68,84 @@ fn local(endpoint: &str) -> ProviderConfigInput {
         is_local: true,
         enabled: true,
     }
+}
+#[tokio::test]
+async fn shortcut_secret_command_tests_saved_local_service_translates_without_key() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+    let handle = thread::spawn(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut bytes = Vec::new();
+                    loop {
+                        let mut chunk = [0; 4096];
+                        let count = stream.read(&mut chunk).unwrap();
+                        bytes.extend_from_slice(&chunk[..count]);
+                        if count == 0 {
+                            break;
+                        }
+                        if let Some(end) = bytes.windows(4).position(|p| p == b"\r\n\r\n") {
+                            let headers = String::from_utf8_lossy(&bytes[..end]).to_lowercase();
+                            let length = headers
+                                .lines()
+                                .find_map(|line| {
+                                    line.strip_prefix("content-length:")
+                                        .and_then(|n| n.trim().parse::<usize>().ok())
+                                })
+                                .unwrap_or(0);
+                            if bytes.len() >= end + 4 + length {
+                                break;
+                            }
+                        }
+                    }
+                    let body = r#"{"choices":[{"message":{"content":"本地翻译"}}]}"#;
+                    write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+                    return Some(String::from_utf8(bytes).unwrap());
+                }
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && std::time::Instant::now() < deadline =>
+                {
+                    thread::sleep(Duration::from_millis(5))
+                }
+                _ => return None,
+            }
+        }
+    });
+    let (_dir, service, _, _) = fixture();
+    service.save_provider_config(local(&endpoint)).unwrap();
+    let credential_present = service
+        .get_settings()
+        .unwrap()
+        .providers
+        .into_iter()
+        .find(|p| p.config.id == "local")
+        .unwrap()
+        .configured;
+    assert!(
+        !credential_present,
+        "settings reports credential presence only"
+    );
+    let usable = service
+        .list_providers()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.id == "local")
+        .unwrap()
+        .configured;
+    let result = service
+        .translate_text("Hello".into(), "en".into(), "zh-CN".into(), "local".into())
+        .await;
+    let received = handle.join().unwrap();
+    assert!(usable, "a local service is usable without a credential");
+    assert_eq!(result.unwrap().translated_text, "本地翻译");
+    assert!(!received.unwrap().to_lowercase().contains("authorization:"));
 }
 #[test]
 fn shortcut_secret_command_tests_secret_roundtrip_returns_only_configured_status() {
