@@ -36,6 +36,22 @@ impl From<CapturedDisplay> for CapturedDisplayDto {
 }
 pub type OcrResultDto = OcrResult;
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OcrResultEvent {
+    display_id: String,
+    #[serde(flatten)]
+    result: OcrResult,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OcrErrorEvent {
+    display_id: String,
+    #[serde(flatten)]
+    error: AppErrorDto,
+}
+
 fn app_error(error: OcrError) -> AppErrorDto {
     match error {
         OcrError::EmptyResult => {
@@ -53,7 +69,20 @@ fn app_error(error: OcrError) -> AppErrorDto {
         OcrError::CaptureUnavailable => {
             AppErrorDto::new("capture_unavailable", "无法获取屏幕截图，请重试。", true)
         }
+        OcrError::Cancelled => AppErrorDto::new("cancelled", "截图已取消。", true),
         OcrError::Engine => AppErrorDto::new("ocr_error", "文字识别失败，请重试。", true),
+    }
+}
+
+fn close_session_overlays(app: &AppHandle, display_id: &str) {
+    let Some((session, _)) = display_id.split_once("--") else {
+        return;
+    };
+    let prefix = format!("screenshot-{session}--");
+    for (label, window) in app.webview_windows() {
+        if label.starts_with(&prefix) {
+            let _ = window.close();
+        }
     }
 }
 
@@ -78,6 +107,10 @@ pub async fn begin_screenshot_translation(
         .map_err(app_error)?;
     let dtos: Vec<_> = displays.into_iter().map(CapturedDisplayDto::from).collect();
     for display in &dtos {
+        if !state.is_current(&display.id) {
+            close_session_overlays(&app, &display.id);
+            return Err(app_error(OcrError::Cancelled));
+        }
         let label = format!("screenshot-{}", display.id);
         let url = WebviewUrl::App(format!("index.html?screenshot={}", display.id).into());
         let window = WebviewWindowBuilder::new(&app, label, url)
@@ -104,14 +137,18 @@ pub async fn begin_screenshot_translation(
                         .is_err()
                     || window.show().is_err()
                 {
-                    close_overlays(&app);
-                    state.cancel();
+                    close_session_overlays(&app, &display.id);
+                    state.cancel_session(&display.id);
                     return Err(app_error(OcrError::CaptureUnavailable));
+                }
+                if !state.is_current(&display.id) {
+                    close_session_overlays(&app, &display.id);
+                    return Err(app_error(OcrError::Cancelled));
                 }
             }
             Err(error) => {
-                close_overlays(&app);
-                state.cancel();
+                close_session_overlays(&app, &display.id);
+                state.cancel_session(&display.id);
                 return Err(error);
             }
         }
@@ -138,6 +175,7 @@ pub async fn recognize_screenshot_region(
     display_id: String,
     rect: ScreenshotRect,
 ) -> Result<OcrResultDto, AppErrorDto> {
+    let event_display_id = display_id.clone();
     let result = async {
         let language = services
             .get_translation_selection()?
@@ -153,16 +191,31 @@ pub async fn recognize_screenshot_region(
         .map_err(app_error)
     }
     .await;
-    state.cancel();
-    match &result {
-        Ok(value) => {
-            let _ = app.emit_to("main", "screenshot-ocr-result", value);
-        }
-        Err(error) => {
-            let _ = app.emit_to("main", "screenshot-ocr-error", error);
+    if state.finish(&event_display_id) {
+        match &result {
+            Ok(value) => {
+                let _ = app.emit_to(
+                    "main",
+                    "screenshot-ocr-result",
+                    OcrResultEvent {
+                        display_id: event_display_id.clone(),
+                        result: value.clone(),
+                    },
+                );
+            }
+            Err(error) => {
+                let _ = app.emit_to(
+                    "main",
+                    "screenshot-ocr-error",
+                    OcrErrorEvent {
+                        display_id: event_display_id.clone(),
+                        error: error.clone(),
+                    },
+                );
+            }
         }
     }
-    close_overlays(&app);
+    close_session_overlays(&app, &event_display_id);
     result
 }
 
@@ -170,8 +223,8 @@ pub async fn recognize_screenshot_region(
 pub fn cancel_screenshot_translation(
     app: AppHandle,
     state: State<'_, Arc<OcrService>>,
-    _display_id: String,
+    display_id: String,
 ) {
-    state.cancel();
-    close_overlays(&app);
+    state.cancel_session(&display_id);
+    close_session_overlays(&app, &display_id);
 }

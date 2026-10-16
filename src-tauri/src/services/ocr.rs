@@ -5,7 +5,10 @@ use crate::{
 use serde::Serialize;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -31,6 +34,7 @@ pub enum OcrError {
     Timeout,
     InvalidRegion,
     CaptureUnavailable,
+    Cancelled,
     Engine,
 }
 
@@ -40,12 +44,33 @@ pub trait OcrEngine: Send + Sync {
         image: ImageRegion,
         source_language: Option<&LanguageCode>,
     ) -> Result<OcrResult, OcrError>;
+
+    fn recognize_with_cancel(
+        &self,
+        image: ImageRegion,
+        source_language: Option<&LanguageCode>,
+        _cancelled: &AtomicBool,
+    ) -> Result<OcrResult, OcrError> {
+        self.recognize(image, source_language)
+    }
+}
+
+struct CaptureSession {
+    generation: u64,
+    frames: HashMap<String, CapturedDisplay>,
+    cancelled: Arc<AtomicBool>,
+}
+
+#[derive(Default)]
+struct CaptureState {
+    generation: u64,
+    session: Option<CaptureSession>,
 }
 
 pub struct OcrService {
     capture: Arc<dyn ScreenCapture>,
     engine: Arc<dyn OcrEngine>,
-    frames: Mutex<HashMap<String, CapturedDisplay>>,
+    state: Mutex<CaptureState>,
 }
 
 impl OcrService {
@@ -53,23 +78,55 @@ impl OcrService {
         Self {
             capture,
             engine,
-            frames: Mutex::new(HashMap::new()),
+            state: Mutex::new(CaptureState::default()),
         }
     }
 
     pub fn begin(&self) -> Result<Vec<CapturedDisplay>, OcrError> {
-        self.cancel();
-        let displays = self
-            .capture
-            .capture_all_displays()
-            .map_err(|_| OcrError::CaptureUnavailable)?;
+        let generation = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| OcrError::CaptureUnavailable)?;
+            if let Some(old) = state.session.take() {
+                old.cancelled.store(true, Ordering::Release);
+            }
+            state.generation = state.generation.wrapping_add(1);
+            let generation = state.generation;
+            state.session = Some(CaptureSession {
+                generation,
+                frames: HashMap::new(),
+                cancelled: Arc::new(AtomicBool::new(false)),
+            });
+            generation
+        };
+        let displays = match self.capture.capture_all_displays() {
+            Ok(displays) => displays,
+            Err(_) => {
+                self.cancel_generation(generation);
+                return Err(OcrError::CaptureUnavailable);
+            }
+        };
         if displays.is_empty() {
+            self.cancel_generation(generation);
             return Err(OcrError::CaptureUnavailable);
         }
-        let mut frames = self
-            .frames
+        let mut state = self
+            .state
             .lock()
             .map_err(|_| OcrError::CaptureUnavailable)?;
+        let session = state
+            .session
+            .as_mut()
+            .filter(|s| s.generation == generation)
+            .ok_or(OcrError::Cancelled)?;
+        let displays: Vec<_> = displays
+            .into_iter()
+            .map(|mut d| {
+                d.id = format!("s{generation}--{}", d.id);
+                d
+            })
+            .collect();
         let previews = displays
             .iter()
             .map(|d| CapturedDisplay {
@@ -83,16 +140,20 @@ impl OcrService {
                 rgba: Vec::new(),
             })
             .collect();
-        *frames = displays.into_iter().map(|d| (d.id.clone(), d)).collect();
+        session.frames = displays.into_iter().map(|d| (d.id.clone(), d)).collect();
         Ok(previews)
     }
 
     pub fn display(&self, id: &str) -> Result<CapturedDisplay, OcrError> {
-        let frames = self
-            .frames
+        let state = self
+            .state
             .lock()
             .map_err(|_| OcrError::CaptureUnavailable)?;
-        let d = frames.get(id).ok_or(OcrError::CaptureUnavailable)?;
+        let d = state
+            .session
+            .as_ref()
+            .and_then(|s| s.frames.get(id))
+            .ok_or(OcrError::CaptureUnavailable)?;
         Ok(CapturedDisplay {
             id: d.id.clone(),
             origin_x: d.origin_x,
@@ -111,17 +172,30 @@ impl OcrService {
         rect: ScreenshotRect,
         source_language: Option<&LanguageCode>,
     ) -> Result<OcrResult, OcrError> {
-        let frame = {
-            let mut frames = self
-                .frames
+        let (frame, cancelled) = {
+            let mut state = self
+                .state
                 .lock()
                 .map_err(|_| OcrError::CaptureUnavailable)?;
-            let selected = frames.remove(display_id);
-            frames.clear();
-            selected.ok_or(OcrError::CaptureUnavailable)?
+            let session = state.session.as_mut().ok_or(OcrError::CaptureUnavailable)?;
+            let selected = session
+                .frames
+                .remove(display_id)
+                .ok_or(OcrError::CaptureUnavailable)?;
+            session.frames.clear();
+            (selected, Arc::clone(&session.cancelled))
         };
         let image = crop(frame, rect)?;
-        let mut result = self.engine.recognize(image, source_language)?;
+        if cancelled.load(Ordering::Acquire) {
+            return Err(OcrError::Cancelled);
+        }
+        let result = self
+            .engine
+            .recognize_with_cancel(image, source_language, &cancelled);
+        if cancelled.load(Ordering::Acquire) {
+            return Err(OcrError::Cancelled);
+        }
+        let mut result = result?;
         if result.text.trim().is_empty() {
             return Err(OcrError::EmptyResult);
         }
@@ -130,9 +204,54 @@ impl OcrService {
     }
 
     pub fn cancel(&self) {
-        if let Ok(mut frames) = self.frames.lock() {
-            frames.clear();
+        if let Ok(mut state) = self.state.lock() {
+            if let Some(session) = state.session.take() {
+                session.cancelled.store(true, Ordering::Release);
+            }
         }
+    }
+
+    fn cancel_generation(&self, generation: u64) {
+        if let Ok(mut state) = self.state.lock() {
+            if state
+                .session
+                .as_ref()
+                .is_some_and(|s| s.generation == generation)
+            {
+                if let Some(session) = state.session.take() {
+                    session.cancelled.store(true, Ordering::Release);
+                }
+            }
+        }
+    }
+
+    pub fn cancel_session(&self, display_id: &str) -> bool {
+        if let Ok(mut state) = self.state.lock() {
+            if state
+                .session
+                .as_ref()
+                .is_some_and(|s| display_id.starts_with(&format!("s{}--", s.generation)))
+            {
+                if let Some(session) = state.session.take() {
+                    session.cancelled.store(true, Ordering::Release);
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn finish(&self, display_id: &str) -> bool {
+        self.cancel_session(display_id)
+    }
+
+    pub fn is_current(&self, display_id: &str) -> bool {
+        self.state.lock().is_ok_and(|state| {
+            state
+                .session
+                .as_ref()
+                .is_some_and(|s| display_id.starts_with(&format!("s{}--", s.generation)))
+        })
     }
 }
 

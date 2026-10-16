@@ -3,6 +3,7 @@ use crate::{
     platform::screen_capture::ImageRegion,
     services::ocr::{OcrBlock, OcrEngine, OcrError, OcrResult},
 };
+use std::sync::atomic::AtomicBool;
 
 pub struct WindowsOcrEngine;
 
@@ -13,6 +14,16 @@ impl OcrEngine for WindowsOcrEngine {
         image: ImageRegion,
         source_language: Option<&LanguageCode>,
     ) -> Result<OcrResult, OcrError> {
+        self.recognize_with_cancel(image, source_language, &AtomicBool::new(false))
+    }
+
+    fn recognize_with_cancel(
+        &self,
+        image: ImageRegion,
+        source_language: Option<&LanguageCode>,
+        cancelled: &AtomicBool,
+    ) -> Result<OcrResult, OcrError> {
+        use std::sync::atomic::Ordering;
         use std::time::{Duration, Instant};
         use windows::{
             core::{Interface, HSTRING},
@@ -51,11 +62,19 @@ impl OcrEngine for WindowsOcrEngine {
             .map_err(|_| OcrError::Engine)?;
         let deadline = Instant::now() + Duration::from_secs(10);
         while operation.Status().map_err(|_| OcrError::Engine)?.0 == 0 {
+            if cancelled.load(Ordering::Acquire) {
+                let _ = operation.Cancel();
+                return Err(OcrError::Cancelled);
+            }
             if Instant::now() >= deadline {
                 let _ = operation.Cancel();
                 return Err(OcrError::Timeout);
             }
             std::thread::sleep(Duration::from_millis(10));
+        }
+        if cancelled.load(Ordering::Acquire) {
+            let _ = operation.Cancel();
+            return Err(OcrError::Cancelled);
         }
         let recognized = operation.GetResults().map_err(|_| OcrError::Engine)?;
         let mut blocks = Vec::new();

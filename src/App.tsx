@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { beginScreenshotTranslation, cancelScreenshotTranslation, getScreenshotDisplay, getTranslationSelection, listLanguages,
   recognizeScreenshotRegion, saveTranslationSelection, type AppErrorDto, type CapturedDisplayDto,
@@ -9,18 +9,39 @@ import { TranslateView } from "./features/translate/TranslateView";
 
 const views = ["Translate", "History", "Settings"] as const;
 type View = (typeof views)[number];
+type OcrResultEvent = OcrResultDto & { displayId: string };
+type OcrErrorEvent = AppErrorDto & { displayId: string };
+
+function captureError(error: unknown): AppErrorDto {
+  if (error && typeof error === "object" && "code" in error && "message" in error && "retryable" in error) {
+    return error as AppErrorDto;
+  }
+  return { code: "capture_unavailable", message: "无法获取屏幕截图，请重试。", retryable: true };
+}
 
 function OverlayWindow({ displayId }: { displayId: string }) {
   const [display, setDisplay] = useState<CapturedDisplayDto | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { void getScreenshotDisplay(displayId).then(setDisplay).catch(() => void cancelScreenshotTranslation(displayId)); }, [displayId]);
+  useEffect(() => {
+    let active = true;
+    void getScreenshotDisplay(displayId).then(value => { if (active) setDisplay(value); }).catch(async error => {
+      if (!active) return;
+      try {
+        await emitTo("main", "screenshot-ocr-error", { displayId, ...captureError(error) } satisfies OcrErrorEvent);
+      } finally {
+        await cancelScreenshotTranslation(displayId);
+      }
+    });
+    return () => { active = false; };
+  }, [displayId]);
   const cancel = useCallback(() => { void cancelScreenshotTranslation(displayId); }, [displayId]);
   async function select(id: string, rect: ScreenshotRect) {
     if (busy) return;
     setBusy(true);
     try { await recognizeScreenshotRegion(id, rect); }
     catch (error) {
-      await emitTo("main", "screenshot-ocr-error", error);
+      const typed = captureError(error);
+      if (typed.code !== "cancelled") await emitTo("main", "screenshot-ocr-error", { displayId: id, ...typed } satisfies OcrErrorEvent);
       await cancelScreenshotTranslation(id);
     }
   }
@@ -35,25 +56,43 @@ function MainApp() {
   const [selection, setSelection] = useState<TranslationSelectionDto | null>(null);
   const [screenshotError, setScreenshotError] = useState<AppErrorDto | null>(null);
   const [capturing, setCapturing] = useState(false);
+  const captureIds = useRef(new Set<string>());
+  const pendingCaptureErrors = useRef<OcrErrorEvent[] | null>(null);
 
   useEffect(() => {
     let active = true;
-    const success = listen<OcrResultDto>("screenshot-ocr-result", event => {
+    const success = listen<OcrResultEvent>("screenshot-ocr-result", event => {
+      if (!captureIds.current.has(event.payload.displayId)) return;
       void Promise.all([listLanguages(), getTranslationSelection()]).then(([options, saved]) => {
-        if (active) { setLanguages(options); setSelection(saved); setOcrResult(event.payload); setScreenshotError(null); setActiveView("Translate"); }
-      }).catch(error => { if (active) setScreenshotError(error as AppErrorDto); });
+        if (active && captureIds.current.has(event.payload.displayId)) {
+          captureIds.current.clear(); setLanguages(options); setSelection(saved); setOcrResult(event.payload); setScreenshotError(null); setActiveView("Translate");
+        }
+      }).catch(error => { if (active && captureIds.current.has(event.payload.displayId)) setScreenshotError(captureError(error)); });
     });
-    const failure = listen<AppErrorDto>("screenshot-ocr-error", event => {
-      if (active) { setScreenshotError(event.payload); setCapturing(false); setActiveView("Translate"); }
+    const failure = listen<OcrErrorEvent>("screenshot-ocr-error", event => {
+      if (pendingCaptureErrors.current) {
+        pendingCaptureErrors.current.push(event.payload);
+        return;
+      }
+      if (active && captureIds.current.has(event.payload.displayId)) {
+        captureIds.current.clear(); setScreenshotError(event.payload); setCapturing(false); setActiveView("Translate");
+      }
     });
     return () => { active = false; void success.then(unlisten => unlisten()); void failure.then(unlisten => unlisten()); };
   }, []);
 
   async function startScreenshot() {
+    captureIds.current.clear();
+    pendingCaptureErrors.current = [];
     setScreenshotError(null); setOcrResult(null); setCapturing(true);
-    try { await beginScreenshotTranslation(); }
+    try {
+      const displays = await beginScreenshotTranslation();
+      captureIds.current = new Set(displays.map(display => display.id));
+      const error = pendingCaptureErrors.current?.find(value => captureIds.current.has(value.displayId));
+      if (error) { captureIds.current.clear(); setScreenshotError(error); setActiveView("Translate"); }
+    }
     catch (error) { setScreenshotError(error as AppErrorDto); }
-    finally { setCapturing(false); }
+    finally { pendingCaptureErrors.current = null; setCapturing(false); }
   }
   async function confirm(text: string, source: string, target: string) {
     try {
