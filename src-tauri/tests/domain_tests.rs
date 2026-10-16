@@ -2,8 +2,8 @@ mod domain_tests {
     use std::sync::Arc;
 
     use quick_translate_lib::domain::{
-        LanguageCode, ProviderError, TranslationProvider, TranslationRequest, TranslationResult,
-        ValidationError,
+        LanguageCode, ProviderConfig, ProviderError, ProviderId, TranslationProvider,
+        TranslationRequest, TranslationResult, ValidationError,
     };
 
     #[test]
@@ -36,9 +36,9 @@ mod domain_tests {
         let target = "zh-CN".parse().unwrap();
         let request = TranslationRequest::new(" Hello ".into(), source, target).unwrap();
 
-        assert_eq!(request.text, " Hello ");
-        assert_eq!(request.source.as_str(), "en");
-        assert_eq!(request.target.as_str(), "zh-CN");
+        assert_eq!(request.text(), " Hello ");
+        assert_eq!(request.source().as_str(), "en");
+        assert_eq!(request.target().as_str(), "zh-CN");
     }
 
     #[test]
@@ -62,6 +62,81 @@ mod domain_tests {
     fn rejects_invalid_deserialized_request() {
         let json = r#"{"text":"   ","source":"en","target":"ja"}"#;
         assert!(serde_json::from_str::<TranslationRequest>(json).is_err());
+    }
+
+    fn provider_config_json(endpoint: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": "example",
+            "display_name": "Example",
+            "endpoint": endpoint,
+            "model": "basic",
+            "secret_account": "example-keyring-account",
+            "is_local": false,
+            "enabled": true
+        })
+    }
+
+    #[test]
+    fn rejects_secret_bearing_endpoints_during_deserialization() {
+        for endpoint in [
+            "https://user@example.com/translate",
+            "https://user:password@example.com/translate",
+            "https://example.com/translate?api_key=secret",
+            "https://example.com/translate#secret",
+        ] {
+            let value = provider_config_json(endpoint);
+            let error = serde_json::from_value::<ProviderConfig>(value).unwrap_err();
+            assert!(!format!("{error:?}").contains(endpoint));
+        }
+    }
+
+    #[test]
+    fn accepts_https_and_loopback_http_endpoints_without_changing_settings_shape() {
+        for endpoint in [
+            "https://example.com/translate",
+            "http://localhost:8080/translate",
+            "http://127.0.0.1:8080/translate",
+            "http://[::1]:8080/translate",
+        ] {
+            let value = provider_config_json(endpoint);
+            let config: ProviderConfig = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(config.endpoint().unwrap().as_str(), endpoint);
+            assert_eq!(config.secret_account(), Some("example-keyring-account"));
+            assert_eq!(serde_json::to_value(config).unwrap(), value);
+        }
+    }
+
+    #[test]
+    fn rejects_secret_bearing_endpoints_during_direct_construction() {
+        for endpoint in [
+            "https://user:password@example.com/translate",
+            "https://example.com/translate?api_key=secret",
+            "https://example.com/translate#secret",
+        ] {
+            let result = ProviderConfig::new(
+                ProviderId::new("example"),
+                "Example".into(),
+                Some(endpoint.parse().unwrap()),
+                Some("basic".into()),
+                Some("example-keyring-account".into()),
+                false,
+                true,
+            );
+            assert_eq!(
+                result.unwrap_err(),
+                ValidationError::InvalidProviderEndpoint
+            );
+        }
+    }
+
+    #[test]
+    fn config_debug_does_not_expose_endpoint_content() {
+        let config: ProviderConfig = serde_json::from_value(provider_config_json(
+            "https://example.com/secret-path-marker",
+        ))
+        .unwrap();
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("secret-path-marker"));
     }
 
     struct FakeProvider {

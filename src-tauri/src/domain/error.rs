@@ -8,6 +8,8 @@ pub enum ValidationError {
     EmptyText,
     #[error("source and target languages must differ")]
     IdenticalLanguages,
+    #[error("invalid provider endpoint")]
+    InvalidProviderEndpoint,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Error)]

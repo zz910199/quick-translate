@@ -2,14 +2,44 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use super::{LanguageCode, ValidationError};
 
+/// A validated request with immutable read access.
+///
+/// ```compile_fail
+/// use quick_translate_lib::domain::TranslationRequest;
+/// let request = TranslationRequest {
+///     text: "   ".into(),
+///     source: "en".parse().unwrap(),
+///     target: "en".parse().unwrap(),
+/// };
+/// ```
+///
+/// ```compile_fail
+/// use quick_translate_lib::domain::TranslationRequest;
+/// let mut request = TranslationRequest::new(
+///     "hello".into(), "en".parse().unwrap(), "ja".parse().unwrap()
+/// ).unwrap();
+/// request.text = "   ".into();
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct TranslationRequest {
-    pub text: String,
-    pub source: LanguageCode,
-    pub target: LanguageCode,
+    text: String,
+    source: LanguageCode,
+    target: LanguageCode,
 }
 
 impl TranslationRequest {
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn source(&self) -> &LanguageCode {
+        &self.source
+    }
+
+    pub fn target(&self) -> &LanguageCode {
+        &self.target
+    }
+
     pub fn new(
         text: String,
         source: LanguageCode,
