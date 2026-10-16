@@ -10,10 +10,12 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "appDirectoriesOverride": "D:/QuickTranslate/Data",
     "windows": [
       {
         "label": "main",
         "title": "Quick Translate",
+        "dataDirectory": "D:/QuickTranslate/Data/WebView",
         "width": 640,
         "height": 440,
         "minWidth": 360,

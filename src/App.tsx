@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { TranslateView } from "./features/translate/TranslateView";
 
 const views = ["Translate", "History", "Settings"] as const;
 type View = (typeof views)[number];
@@ -24,7 +25,9 @@ export function App() {
           </button>
         ))}
       </nav>
-      <main className="main-panel" aria-label={activeView} />
+      <main className="main-panel" aria-label={activeView}>
+        {activeView === "Translate" && <TranslateView />}
+      </main>
     </div>
   );
 }
