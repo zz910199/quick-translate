@@ -102,4 +102,16 @@ describe("application shell", () => {
     completeBegin([{id:"s1--display-0",originX:0,originY:0,scaleFactor:1,previewDataUrl:"data:image/jpeg;base64,AA==",width:10,height:10}]);
     expect(await screen.findByRole("alert")).toHaveTextContent("无法读取截图预览");
   });
+
+  it("retains successful OCR received before begin returns", async () => {
+    let completeBegin!: (displays: commands.CapturedDisplayDto[]) => void;
+    vi.mocked(commands.beginScreenshotTranslation).mockImplementationOnce(() => new Promise(resolve => { completeBegin = resolve; }));
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "截图翻译" }));
+    handlers.get("screenshot-ocr-result")?.({payload:{displayId:"s0--display-0",text:"stale",confidence:null,blocks:[]}});
+    handlers.get("screenshot-ocr-result")?.({payload:{displayId:"s1--display-0",text:"early result",confidence:null,blocks:[]}});
+    completeBegin([{id:"s1--display-0",originX:0,originY:0,scaleFactor:1,previewDataUrl:"data:image/jpeg;base64,AA==",width:10,height:10}]);
+    expect(await screen.findByLabelText("识别文字")).toHaveValue("early result");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });

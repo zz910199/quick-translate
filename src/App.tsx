@@ -11,6 +11,7 @@ const views = ["Translate", "History", "Settings"] as const;
 type View = (typeof views)[number];
 type OcrResultEvent = OcrResultDto & { displayId: string };
 type OcrErrorEvent = AppErrorDto & { displayId: string };
+type OcrEvent = { kind: "result"; payload: OcrResultEvent } | { kind: "error"; payload: OcrErrorEvent };
 
 function captureError(error: unknown): AppErrorDto {
   if (error && typeof error === "object" && "code" in error && "message" in error && "retryable" in error) {
@@ -57,42 +58,50 @@ function MainApp() {
   const [screenshotError, setScreenshotError] = useState<AppErrorDto | null>(null);
   const [capturing, setCapturing] = useState(false);
   const captureIds = useRef(new Set<string>());
-  const pendingCaptureErrors = useRef<OcrErrorEvent[] | null>(null);
+  const pendingCaptureEvents = useRef<OcrEvent[] | null>(null);
+
+  const receiveOcrEvent = useCallback((event: OcrEvent) => {
+    if (!captureIds.current.has(event.payload.displayId)) return;
+    if (event.kind === "error") {
+      captureIds.current.clear(); setScreenshotError(event.payload); setCapturing(false); setActiveView("Translate");
+      return;
+    }
+    const result = event.payload;
+    void Promise.all([listLanguages(), getTranslationSelection()]).then(([options, saved]) => {
+      if (captureIds.current.has(result.displayId)) {
+        captureIds.current.clear(); setLanguages(options); setSelection(saved); setOcrResult(result); setScreenshotError(null); setActiveView("Translate");
+      }
+    }).catch(error => { if (captureIds.current.has(result.displayId)) setScreenshotError(captureError(error)); });
+  }, []);
 
   useEffect(() => {
     let active = true;
+    function receive(event: OcrEvent) {
+      if (!active) return;
+      if (pendingCaptureEvents.current) pendingCaptureEvents.current.push(event);
+      else receiveOcrEvent(event);
+    }
     const success = listen<OcrResultEvent>("screenshot-ocr-result", event => {
-      if (!captureIds.current.has(event.payload.displayId)) return;
-      void Promise.all([listLanguages(), getTranslationSelection()]).then(([options, saved]) => {
-        if (active && captureIds.current.has(event.payload.displayId)) {
-          captureIds.current.clear(); setLanguages(options); setSelection(saved); setOcrResult(event.payload); setScreenshotError(null); setActiveView("Translate");
-        }
-      }).catch(error => { if (active && captureIds.current.has(event.payload.displayId)) setScreenshotError(captureError(error)); });
+      receive({ kind: "result", payload: event.payload });
     });
     const failure = listen<OcrErrorEvent>("screenshot-ocr-error", event => {
-      if (pendingCaptureErrors.current) {
-        pendingCaptureErrors.current.push(event.payload);
-        return;
-      }
-      if (active && captureIds.current.has(event.payload.displayId)) {
-        captureIds.current.clear(); setScreenshotError(event.payload); setCapturing(false); setActiveView("Translate");
-      }
+      receive({ kind: "error", payload: event.payload });
     });
-    return () => { active = false; void success.then(unlisten => unlisten()); void failure.then(unlisten => unlisten()); };
-  }, []);
+    return () => { active = false; captureIds.current.clear(); void success.then(unlisten => unlisten()); void failure.then(unlisten => unlisten()); };
+  }, [receiveOcrEvent]);
 
   async function startScreenshot() {
     captureIds.current.clear();
-    pendingCaptureErrors.current = [];
+    pendingCaptureEvents.current = [];
     setScreenshotError(null); setOcrResult(null); setCapturing(true);
     try {
       const displays = await beginScreenshotTranslation();
       captureIds.current = new Set(displays.map(display => display.id));
-      const error = pendingCaptureErrors.current?.find(value => captureIds.current.has(value.displayId));
-      if (error) { captureIds.current.clear(); setScreenshotError(error); setActiveView("Translate"); }
+      const event = pendingCaptureEvents.current?.find(value => captureIds.current.has(value.payload.displayId));
+      if (event) receiveOcrEvent(event);
     }
     catch (error) { setScreenshotError(error as AppErrorDto); }
-    finally { pendingCaptureErrors.current = null; setCapturing(false); }
+    finally { pendingCaptureEvents.current = null; setCapturing(false); }
   }
   async function confirm(text: string, source: string, target: string) {
     try {

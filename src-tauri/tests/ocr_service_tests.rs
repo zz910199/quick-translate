@@ -308,6 +308,36 @@ fn ocr_service_tests_older_capture_cannot_replace_newer_session() {
 }
 
 struct FailedCapture;
+
+#[test]
+fn ocr_service_tests_completed_ocr_is_distinct_from_cancelled_startup() {
+    let service = service(Ok(OcrResult {
+        text: "early result".into(),
+        confidence: None,
+        blocks: vec![],
+    }));
+    let id = service.begin().unwrap().remove(0).id;
+    service
+        .recognize(
+            &id,
+            ScreenshotRect {
+                x: 1,
+                y: 1,
+                width: 1,
+                height: 1,
+            },
+            Some(&"en".parse().unwrap()),
+        )
+        .unwrap();
+    assert!(service.finish(&id));
+    assert!(!service.is_current(&id));
+    assert!(service.is_finished(&id));
+    let next_id = service.begin().unwrap().remove(0).id;
+    assert!(!service.is_finished(&id));
+    assert!(service.cancel_session(&next_id));
+    assert!(!service.is_finished(&next_id));
+}
+
 impl ScreenCapture for FailedCapture {
     fn capture_all_displays(&self) -> Result<Vec<CapturedDisplay>, CaptureError> {
         Err(CaptureError::Unavailable)

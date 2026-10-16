@@ -65,6 +65,7 @@ struct CaptureSession {
 struct CaptureState {
     generation: u64,
     session: Option<CaptureSession>,
+    finished_generation: Option<u64>,
 }
 
 pub struct OcrService {
@@ -92,6 +93,7 @@ impl OcrService {
                 old.cancelled.store(true, Ordering::Release);
             }
             state.generation = state.generation.wrapping_add(1);
+            state.finished_generation = None;
             let generation = state.generation;
             state.session = Some(CaptureSession {
                 generation,
@@ -242,7 +244,29 @@ impl OcrService {
     }
 
     pub fn finish(&self, display_id: &str) -> bool {
-        self.cancel_session(display_id)
+        if let Ok(mut state) = self.state.lock() {
+            if state
+                .session
+                .as_ref()
+                .is_some_and(|s| display_id.starts_with(&format!("s{}--", s.generation)))
+            {
+                if let Some(session) = state.session.take() {
+                    session.cancelled.store(true, Ordering::Release);
+                    state.finished_generation = Some(session.generation);
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Startup may return its display IDs after OCR already completed on an early overlay.
+    pub fn is_finished(&self, display_id: &str) -> bool {
+        self.state.lock().is_ok_and(|state| {
+            state
+                .finished_generation
+                .is_some_and(|generation| display_id.starts_with(&format!("s{generation}--")))
+        })
     }
 
     pub fn is_current(&self, display_id: &str) -> bool {

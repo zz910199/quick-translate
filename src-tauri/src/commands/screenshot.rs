@@ -109,6 +109,9 @@ pub async fn begin_screenshot_translation(
     for display in &dtos {
         if !state.is_current(&display.id) {
             close_session_overlays(&app, &display.id);
+            if state.is_finished(&display.id) {
+                return Ok(dtos);
+            }
             return Err(app_error(OcrError::Cancelled));
         }
         let label = format!("screenshot-{}", display.id);
@@ -138,16 +141,25 @@ pub async fn begin_screenshot_translation(
                     || window.show().is_err()
                 {
                     close_session_overlays(&app, &display.id);
+                    if state.is_finished(&display.id) {
+                        return Ok(dtos);
+                    }
                     state.cancel_session(&display.id);
                     return Err(app_error(OcrError::CaptureUnavailable));
                 }
                 if !state.is_current(&display.id) {
                     close_session_overlays(&app, &display.id);
+                    if state.is_finished(&display.id) {
+                        return Ok(dtos);
+                    }
                     return Err(app_error(OcrError::Cancelled));
                 }
             }
             Err(error) => {
                 close_session_overlays(&app, &display.id);
+                if state.is_finished(&display.id) {
+                    return Ok(dtos);
+                }
                 state.cancel_session(&display.id);
                 return Err(error);
             }
