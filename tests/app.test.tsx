@@ -30,19 +30,19 @@ describe("application shell", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "Quick Translate" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Translate" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "History" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "翻译" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "历史" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "设置" })).toBeInTheDocument();
   });
 
   it("switches the active panel through primary navigation", () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
-    expect(screen.getByRole("main", { name: "History" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+    expect(screen.getByRole("main", { name: "历史" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    expect(screen.getByRole("main", { name: "Settings" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "设置" }));
+    expect(screen.getByRole("main", { name: "设置" })).toBeInTheDocument();
   });
 
   it("shows OCR text for editing and seeds translation only after confirmation", async () => {

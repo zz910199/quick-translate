@@ -3,14 +3,19 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { beginScreenshotTranslation, cancelScreenshotTranslation, getScreenshotDisplay, getSettings, getTranslationSelection, listLanguages,
   recognizeScreenshotRegion, saveTranslationSelection, type AppErrorDto, type CapturedDisplayDto,
   type LanguageOptionDto, type OcrResultDto, type ScreenshotRect, type TranslationSelectionDto } from "./lib/commands";
+import { CameraIcon } from "./components/icons";
 import { ScreenshotOverlay } from "./features/screenshot/ScreenshotOverlay";
 import { ScreenshotResult } from "./features/screenshot/ScreenshotResult";
 import { TranslateView } from "./features/translate/TranslateView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { HistoryView } from "./features/history/HistoryView";
 
-const views = ["Translate", "History", "Settings"] as const;
-type View = (typeof views)[number];
+const views = [
+  { id: "Translate", label: "翻译" },
+  { id: "History", label: "历史" },
+  { id: "Settings", label: "设置" },
+] as const;
+type View = (typeof views)[number]["id"];
 type OcrResultEvent = OcrResultDto & { displayId: string };
 type OcrErrorEvent = AppErrorDto & { displayId: string };
 type OcrEvent = { kind: "result"; payload: OcrResultEvent } | { kind: "error"; payload: OcrErrorEvent };
@@ -52,7 +57,9 @@ function OverlayWindow({ displayId }: { displayId: string }) {
 }
 
 function MainApp() {
-  const [activeView, setActiveView] = useState<View>("Translate");
+  const requested = new URLSearchParams(window.location.search).get("view");
+  const startView = views.find(view => view.id === requested)?.id ?? "Translate";
+  const [activeView, setActiveView] = useState<View>(startView);
   const [draftText, setDraftText] = useState<string>();
   const [ocrResult, setOcrResult] = useState<OcrResultDto | null>(null);
   const [languages, setLanguages] = useState<LanguageOptionDto[]>([]);
@@ -123,34 +130,64 @@ function MainApp() {
     } catch (error) { setScreenshotError(error as AppErrorDto); }
   }
 
+  /** Arrow keys move between tabs, matching the tablist pattern. */
+  function moveTab(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    const index = views.findIndex(view => view.id === activeView);
+    const next = event.key === "ArrowRight" ? (index + 1) % views.length : (index - 1 + views.length) % views.length;
+    setActiveView(views[next].id);
+    event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+  }
+
+  const activeLabel = views.find(view => view.id === activeView)?.label ?? "";
+
   return (
     <div className="app-shell">
-      <header className="title-bar">
-        <h1>Quick Translate</h1>
-      </header>
-      <nav className="primary-nav" aria-label="Main navigation">
-        {views.map((view) => (
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">译</span>
+          <h1 className="brand-name">Quick Translate</h1>
+        </div>
+        <nav className="seg" role="tablist" aria-label="主导航" onKeyDown={moveTab}>
+          {views.map((view) => (
+            <button
+              key={view.id}
+              type="button"
+              role="tab"
+              aria-selected={activeView === view.id}
+              tabIndex={activeView === view.id ? 0 : -1}
+              onClick={() => setActiveView(view.id)}
+            >
+              {view.label}
+            </button>
+          ))}
+        </nav>
+        <div className="topbar-actions">
           <button
-            key={view}
             type="button"
-            className={`nav-button${activeView === view ? " active" : ""}`}
-            aria-current={activeView === view ? "page" : undefined}
-            onClick={() => setActiveView(view)}
+            className="icon-btn"
+            aria-label="截图翻译"
+            title="截图翻译 · Ctrl+Shift+S"
+            disabled={capturing}
+            onClick={() => void startScreenshot()}
           >
-            {view}
+            <CameraIcon />
           </button>
-        ))}
-      </nav>
-      <main className="main-panel" aria-label={activeView}>
-        {desktopError && <div role="alert" className="inline-error"><span>{desktopError.message}</span><button onClick={() => {setActiveView("Settings");setDesktopError(null);}}>打开设置</button></div>}
+        </div>
+      </header>
+
+      <main className="main-panel" aria-label={activeLabel}>
+        {desktopError && <div role="alert" className="alert"><span className="msg">{desktopError.message}</span><button onClick={() => {setActiveView("Settings");setDesktopError(null);}}>打开设置</button></div>}
         {activeView === "Settings" && <SettingsView />}
         {activeView === "History" && <HistoryView />}
         {activeView === "Translate" && <>
-          <div className="capture-toolbar"><button type="button" disabled={capturing} onClick={() => void startScreenshot()}>截图翻译</button></div>
-          {screenshotError && <div className="inline-error screenshot-error" role="alert"><span>{screenshotError.message || "截图失败，请重试。"}</span><button type="button" onClick={() => void startScreenshot()}>重新截图</button></div>}
           {ocrResult ? <ScreenshotResult result={ocrResult} languages={languages} source={selection?.source} target={selection?.target}
             onConfirm={(text, source, target) => void confirm(text, source, target)} onRetry={() => void startScreenshot()} />
-            : <TranslateView draftText={draftText} />}
+            : <TranslateView
+                draftText={draftText}
+                externalError={screenshotError ? { error: screenshotError, actionLabel: "重新截图", onAction: () => void startScreenshot() } : null}
+              />}
         </>}
       </main>
     </div>

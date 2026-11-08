@@ -58,6 +58,12 @@ npm run tauri -- build         # Release EXE + NSIS 当前用户安装包
 # 等价 Windows 专用快捷命令：npm run package:windows
 ```
 
+不启动桌面壳也可以在浏览器里查看界面：`npm run dev` 后打开
+`http://127.0.0.1:1420/preview.html`（Tauri IPC 已在 `src/preview/main.tsx` 打桩）。
+可用查询参数：`?view=history|settings` 切换视图，`?demo=loading|error` 演示加载与错误态，
+`?debug=1` 显示实时视口尺寸。设计稿与设计系统见
+`docs/design/2026-11-08-ui-redesign.html`。
+
 默认构建输出在项目 D 盘下的 `dist` 与 `src-tauri/target`。Tauri 的 `bundle.useLocalToolsDir` 已开启，NSIS 等打包工具缓存位于 `src-tauri/target/.tauri`，无需依赖 Windows 的 C 盘用户缓存路径。服务集成测试使用临时 SQLite、假凭据存储、假 OCR 和本机 HTTP mock server，不需要外部网络或真实凭据。
 
 完整人工验收与当前限制见 [Windows acceptance](docs/manual/windows-acceptance.md)。多显示器和混合 DPI、操作系统快捷键冲突、真实凭据管理器及安装器运行需要相应 Windows 环境实测；自动测试不能替代这些检查。
