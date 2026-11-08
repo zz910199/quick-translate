@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as commands from "../../lib/commands";
 import { SettingsView } from "./SettingsView";
 
-vi.mock("../../lib/commands", () => ({ getSettings: vi.fn(), saveSettings: vi.fn(), listLanguages: vi.fn(), saveProviderConfig: vi.fn(), setProviderSecret: vi.fn(), deleteProviderSecret: vi.fn() }));
+vi.mock("../../lib/commands", () => ({ getSettings: vi.fn(), saveSettings: vi.fn(), listLanguages: vi.fn(), saveProviderConfig: vi.fn(), setProviderSecret: vi.fn(), deleteProviderSecret: vi.fn(), deleteProviderConfig: vi.fn() }));
 const initial = { source: "en", target: "zh-CN", providerId: "mymemory", privacyMode: "OnlinePreferred" as const, fallbackEnabled: true, historyEnabled: true, shortcut: "Ctrl+Shift+T", shortcutError: null, providers: [
   { id: "mymemory", displayName: "MyMemory", endpoint: "https://api.mymemory.translated.net/get", model: null, isLocal: false, enabled: true, configured: true },
   { id: "local", displayName: "本地模型", endpoint: "http://localhost:11434/v1", model: "local-model", isLocal: true, enabled: true, configured: true },
@@ -61,6 +61,20 @@ it("creates a distinct service when the default OpenAI ID already exists", async
   fireEvent.click(screen.getByRole("button", {name:"保存服务"}));
   await waitFor(() => expect(commands.saveProviderConfig).toHaveBeenCalledWith(expect.objectContaining({id:"openai-compatible-2"})));
   expect(commands.saveProviderConfig).not.toHaveBeenCalledWith(expect.objectContaining({id:"openai-compatible"}));
+});
+it("deletes a service only after confirmation and then selects a remaining one", async () => {
+  const remaining = {id:"local",displayName:"本地模型",endpoint:"http://localhost:11434/v1",model:"local-model",isLocal:true,enabled:true,configured:true};
+  vi.mocked(commands.deleteProviderConfig).mockResolvedValue(undefined);
+  vi.mocked(commands.getSettings)
+    .mockResolvedValueOnce(structuredClone(initial))
+    .mockResolvedValue({...structuredClone(initial),providerId:"local",providers:[remaining]});
+  render(<SettingsView />); await screen.findByLabelText("配置服务");
+  fireEvent.click(screen.getByRole("button",{name:"删除服务"}));
+  expect(commands.deleteProviderConfig).not.toHaveBeenCalled();
+  expect(screen.getByRole("alertdialog")).toBeVisible();
+  fireEvent.click(screen.getByRole("button",{name:"确认删除"}));
+  await waitFor(() => expect(commands.deleteProviderConfig).toHaveBeenCalledWith("mymemory"));
+  expect(await screen.findByLabelText("服务 ID")).toHaveValue("local");
 });
 it("rejects an existing ID in add-service mode without overwriting its configuration", async () => {
   render(<SettingsView />); await screen.findByLabelText("配置服务");

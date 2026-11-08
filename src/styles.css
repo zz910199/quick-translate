@@ -109,6 +109,7 @@ button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2p
 .translation-output { flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px 13px; line-height: 1.65; font-size: 14px; }
 .empty-output { color: #97a4a8; font-size: 13px; }
 .card-footer { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; color: #809096; font-size: 11px; }
+.char-counter.over-limit { color: #a5473c; font-weight: 600; }
 .translate-button { border: 0; background: #147b82; border-radius: 6px; color: #fff; padding: 7px 18px; font-size: 12px; }
 .translate-button:hover:enabled { background: #08656d; }
 .inline-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-radius: 6px; border: 1px solid #edcfcb; background: #fff4f1; color: #a5473c; margin-top: 12px; padding: 9px 12px; line-height: 1.5; }

@@ -133,6 +133,45 @@ fn storage_tests_history_disabled_flag_is_available_without_deleting_saved_histo
 }
 
 #[test]
+fn storage_tests_history_updates_in_place_and_reports_missing_rows() {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = SqliteHistoryRepository::open(temp.path().join("data.sqlite")).unwrap();
+    let id = repo
+        .insert(&entry("first", "2026-10-17T03:00:00Z"))
+        .unwrap();
+    let stored = repo.get(id).unwrap().expect("inserted row is readable");
+    assert_eq!(stored.source_text, "first");
+    let updated = HistoryEntry {
+        id: Some(id),
+        source_text: "edited".into(),
+        translated_text: "改过的译文".into(),
+        provider_id: ProviderId::new("deepl"),
+        ..stored
+    };
+    repo.update(&updated).unwrap();
+    let rows = repo.list(10).unwrap();
+    assert_eq!(rows.len(), 1, "an update must not append a row");
+    assert_eq!(rows[0].source_text, "edited");
+    assert_eq!(rows[0].translated_text, "改过的译文");
+    assert_eq!(rows[0].provider_id.as_str(), "deepl");
+    // The timestamp is preserved, so the entry keeps its position in the list.
+    assert_eq!(rows[0].timestamp, updated.timestamp);
+    assert!(repo.get(999).unwrap().is_none());
+}
+
+#[test]
+fn storage_tests_history_enabled_flag_is_read_without_full_settings_load() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("data.sqlite");
+    let settings = SqliteSettingsRepository::open(&path).unwrap();
+    assert!(settings.history_enabled().unwrap());
+    let mut values = settings.load().unwrap();
+    values.history_enabled = false;
+    settings.save(&values).unwrap();
+    assert!(!settings.history_enabled().unwrap());
+}
+
+#[test]
 fn storage_tests_repositories_support_shared_runtime_ownership_and_concurrent_open() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<SqliteSettingsRepository>();

@@ -203,6 +203,39 @@ impl AppServices {
             Ok(())
         })
     }
+    /// Removes a provider, its stored credential and any selection pointing at it.
+    /// The credential goes first so a failed keyring delete leaves the configuration intact.
+    pub fn delete_provider_config(&self, provider_id: String) -> Result<(), AppErrorDto> {
+        let account = self
+            .load_settings()?
+            .providers
+            .iter()
+            .find(|p| p.id().as_str() == provider_id)
+            .and_then(|p| p.secret_account().map(str::to_owned));
+        if let Some(account) = account {
+            self.secure_store
+                .delete(CREDENTIAL_SERVICE, &account)
+                .map_err(|_| secure_error())?;
+        }
+        self.update_settings(|s| {
+            let before = s.providers.len();
+            s.providers.retain(|p| p.id().as_str() != provider_id);
+            if s.providers.len() == before {
+                return Err(configuration());
+            }
+            if s.active_provider.as_str() == provider_id {
+                // Fall back to the first provider the current privacy mode allows.
+                let mode = s.privacy_mode.clone();
+                s.active_provider = s
+                    .providers
+                    .iter()
+                    .find(|p| p.enabled() && (mode != PrivacyMode::LocalOnly || p.is_local()))
+                    .map(|p| p.id().clone())
+                    .unwrap_or_else(|| ProviderId::new(""));
+            }
+            Ok(())
+        })
+    }
     fn secret_account(&self, provider_id: &str) -> Result<String, AppErrorDto> {
         self.load_settings()?
             .providers
@@ -274,4 +307,11 @@ pub fn delete_provider_secret(
     provider_id: String,
 ) -> Result<(), AppErrorDto> {
     state.delete_provider_secret(provider_id)
+}
+#[tauri::command]
+pub fn delete_provider_config(
+    state: State<'_, AppServices>,
+    provider_id: String,
+) -> Result<(), AppErrorDto> {
+    state.delete_provider_config(provider_id)
 }

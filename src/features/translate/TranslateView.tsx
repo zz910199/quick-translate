@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getTranslationSelection, listLanguages, listProviders, saveTranslationSelection, translateText, writeClipboard,
   type AppErrorDto, type LanguageOptionDto, type ProviderOptionDto, type TranslationResultDto } from "../../lib/commands";
-import { safeAppError, validateTranslation } from "./translate-state";
+import { safeAppError, utf8Bytes, validateTranslation } from "./translate-state";
 
 export interface TranslateViewProps { draftText?: string }
 
@@ -39,6 +39,8 @@ export function TranslateView({ draftText }: TranslateViewProps = {}) {
   }, []);
 
   const provider = providers.find(p => p.id === providerId);
+  const bytes = utf8Bytes(text);
+  const overLimit = provider?.limitBytes !== undefined && bytes > provider.limitBytes;
   function persist(nextSource: string, nextTarget: string, nextProvider: string) {
     if (!nextProvider) return;
     // Serialize changes so a slow earlier write cannot overwrite the final selection.
@@ -47,7 +49,7 @@ export function TranslateView({ draftText }: TranslateViewProps = {}) {
   }
   async function translate() {
     if (submitting.current) return;
-    const invalid = validateTranslation(text, source, target, providerId);
+    const invalid = validateTranslation(text, source, target, providerId, provider?.limitBytes);
     if (invalid) { setError(invalid); return; }
     submitting.current = true; setPending(true); setError(null); setCopied(false); setResult(null); setRetryAction("translate");
     try {
@@ -76,10 +78,10 @@ export function TranslateView({ draftText }: TranslateViewProps = {}) {
       {provider?.notice && <p className="provider-notice">{provider.notice}</p>}
       {!loading && !providers.length && <p className="provider-notice">{localOnly ? "请在设置中启用本地翻译服务。" : "请在设置中配置翻译服务。"}</p>}
       <div className="translation-workspace">
-        <div className="text-card"><label htmlFor="source-text">原文</label><textarea id="source-text" value={text} disabled={pending} placeholder="输入或粘贴要翻译的文本…" onChange={e => { setText(e.target.value); setCopied(false); }} /><div className="card-footer"><span>{Array.from(text).length} 字符</span><button className="translate-button" disabled={disabled || !provider?.configured} onClick={() => void translate()}>{pending ? "翻译中…" : "翻译"}</button></div></div>
+        <div className="text-card"><label htmlFor="source-text">原文</label><textarea id="source-text" value={text} disabled={pending} placeholder="输入或粘贴要翻译的文本…" onChange={e => { setText(e.target.value); setCopied(false); }} /><div className="card-footer"><span className={overLimit ? "char-counter over-limit" : "char-counter"} aria-label="原文长度">{provider?.limitBytes !== undefined ? `${bytes} / ${provider.limitBytes} 字节` : `${Array.from(text).length} 字符`}</span><button className="translate-button" disabled={disabled || !provider?.configured || overLimit} onClick={() => void translate()}>{pending ? "翻译中…" : "翻译"}</button></div></div>
         <div className="text-card result-card"><div className="result-heading"><h3>译文</h3><button className="copy-button" disabled={!result || pending} onClick={() => void copy()}>复制译文</button></div><div className={`translation-output${result ? "" : " empty-output"}`} aria-label="译文" aria-live="polite">{result?.translatedText ?? (pending ? "正在翻译，请稍候…" : loading ? "正在加载翻译配置…" : "译文将显示在这里")}</div><div className="card-footer"><span>{result ? `${providers.find(p => p.id === result.providerId)?.displayName ?? result.providerId} · ${result.elapsedMs} ms` : ""}</span>{copied && <span role="status">已复制</span>}</div></div>
       </div>
-      {error && <div className="inline-error" role="alert"><span>{error.message}</span>{error.retryable && <button type="button" disabled={pending} onClick={() => void (retryAction === "copy" ? copy() : translate())}>重试</button>}</div>}
+      {error && <div className="inline-error" role="alert"><span>{error.message}{error.retryAfterSeconds !== undefined ? `（约 ${error.retryAfterSeconds} 秒后可重试）` : ""}</span>{error.retryable && <button type="button" disabled={pending} onClick={() => void (retryAction === "copy" ? copy() : translate())}>重试</button>}</div>}
     </section>
   );
 }

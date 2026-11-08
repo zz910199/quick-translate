@@ -68,6 +68,22 @@ it("blocks equal languages and MyMemory UTF-8 inputs over 500 bytes", async () =
   expect(await screen.findByRole("alert")).toHaveTextContent("不同");
   expect(commands.translateText).not.toHaveBeenCalled();
 });
+it("shows the byte budget and disables translation once it is exceeded", async () => {
+  vi.mocked(commands.listProviders).mockResolvedValue([{id:"mymemory",displayName:"MyMemory",isLocal:false,configured:true,isDefault:true,limitBytes:500}]);
+  await ready();
+  fireEvent.change(screen.getByLabelText("原文"),{target:{value:"Hi"}});
+  expect(screen.getByLabelText("原文长度")).toHaveTextContent("2 / 500 字节");
+  fireEvent.change(screen.getByLabelText("原文"),{target:{value:"你".repeat(167)}});
+  expect(screen.getByLabelText("原文长度")).toHaveTextContent("501 / 500 字节");
+  expect(screen.getByRole("button",{name:"翻译"})).toBeDisabled();
+});
+it("tells the user how long to wait after a rate limit", async () => {
+  vi.mocked(commands.translateText).mockRejectedValueOnce({code:"rate_limited",message:"额度已用尽",retryable:true,retryAfterSeconds:30});
+  await ready();
+  fireEvent.change(screen.getByLabelText("原文"),{target:{value:"Hello"}});
+  fireEvent.click(screen.getByRole("button",{name:"翻译"}));
+  expect(await screen.findByRole("alert")).toHaveTextContent("约 30 秒后可重试");
+});
 it("accepts a confirmed external draft without starting an online request", async () => {
   const { rerender } = render(<TranslateView draftText="OCR 原文" />);
   await screen.findByRole("option", { name: "MyMemory" });

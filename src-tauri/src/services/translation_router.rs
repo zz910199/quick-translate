@@ -13,12 +13,12 @@ pub enum TranslationError {
     NoLocalProvider,
 }
 
-pub struct TranslationRouter {
-    registry: ProviderRegistry,
+pub struct TranslationRouter<'a> {
+    registry: &'a ProviderRegistry,
 }
 
-impl TranslationRouter {
-    pub fn new(registry: ProviderRegistry) -> Self {
+impl<'a> TranslationRouter<'a> {
+    pub fn new(registry: &'a ProviderRegistry) -> Self {
         Self { registry }
     }
 

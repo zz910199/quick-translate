@@ -9,6 +9,17 @@ pub mod storage;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // The tray and the global shortcut are only useful while the process lives, so closing the
+        // translator window hides it instead of ending the app. 退出 in the tray still exits.
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .setup(|app| {
             use tauri::Manager;
             let services = state::persistent_services()?;
@@ -44,9 +55,11 @@ pub fn run() {
             commands::settings::save_provider_config,
             commands::settings::set_provider_secret,
             commands::settings::delete_provider_secret,
+            commands::settings::delete_provider_config,
             commands::history::list_history,
             commands::history::delete_history_entry,
             commands::history::clear_history,
+            commands::history::retranslate_history_entry,
             commands::screenshot::begin_screenshot_translation,
             commands::screenshot::get_screenshot_display,
             commands::screenshot::recognize_screenshot_region,

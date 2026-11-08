@@ -1,13 +1,19 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use chrono::Utc;
 use serde::Serialize;
 use tauri::State;
 
 use crate::{
+    commands::history::HistoryEntryDto,
     domain::{
         AppSettings, PrivacyMode, ProviderConfig, ProviderError, ProviderId, TranslationRequest,
-        ValidationError,
+        TranslationResult, ValidationError,
     },
     platform::{clipboard::Clipboard, secure_store::SecureStore},
     providers::{ProviderRegistry, CREDENTIAL_SERVICE},
@@ -15,12 +21,18 @@ use crate::{
     storage::{HistoryEntry, HistoryRepository, SettingsRepository},
 };
 
+/// One automatic retry after this pause; transient failures are usually DNS hiccups or a local
+/// server that is still starting.
+const RETRY_DELAY: Duration = Duration::from_millis(300);
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppErrorDto {
     pub code: String,
     pub message: String,
     pub retryable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_seconds: Option<u64>,
 }
 impl AppErrorDto {
     pub fn new(code: &str, message: &str, retryable: bool) -> Self {
@@ -28,7 +40,12 @@ impl AppErrorDto {
             code: code.into(),
             message: message.into(),
             retryable,
+            retry_after_seconds: None,
         }
+    }
+    fn with_retry_after(mut self, seconds: Option<u64>) -> Self {
+        self.retry_after_seconds = seconds;
+        self
     }
     fn storage() -> Self {
         Self::new("storage", "无法读写本地数据，请重试。", true)
@@ -56,6 +73,8 @@ pub struct ProviderOptionDto {
     pub configured: bool,
     pub is_default: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub notice: Option<String>,
 }
 #[derive(Debug, Serialize)]
@@ -71,6 +90,27 @@ pub type RegistryFactory = dyn Fn(&[ProviderConfig], Arc<dyn SecureStore>) -> Re
     + Send
     + Sync;
 
+struct CachedRegistry {
+    fingerprint: u64,
+    registry: Arc<ProviderRegistry>,
+}
+
+/// Adapters are immutable once built and read credentials per request, so a registry stays valid
+/// until the serialized provider list changes.
+fn provider_fingerprint(configs: &[ProviderConfig]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    if let Ok(bytes) = serde_json::to_vec(configs) {
+        bytes.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+/// A translation ready to be stored, together with the request that produced it.
+struct PreparedTranslation {
+    request: TranslationRequest,
+    result: TranslationResult,
+}
+
 /// Shared runtime services. Repositories own short synchronous locks; no guard crosses await.
 pub struct AppServices {
     pub settings: Arc<dyn SettingsRepository>,
@@ -79,6 +119,7 @@ pub struct AppServices {
     pub clipboard: Arc<dyn Clipboard>,
     settings_write: Mutex<()>,
     registry_factory: Arc<RegistryFactory>,
+    registry_cache: Mutex<Option<CachedRegistry>>,
 }
 impl AppServices {
     pub fn new(
@@ -94,11 +135,30 @@ impl AppServices {
             clipboard,
             settings_write: Mutex::new(()),
             registry_factory: Arc::new(ProviderRegistry::from_configs),
+            registry_cache: Mutex::new(None),
         }
     }
     pub fn with_registry_factory(mut self, factory: Arc<RegistryFactory>) -> Self {
         self.registry_factory = factory;
         self
+    }
+    fn registry(&self, configs: &[ProviderConfig]) -> Result<Arc<ProviderRegistry>, AppErrorDto> {
+        let fingerprint = provider_fingerprint(configs);
+        if let Ok(cache) = self.registry_cache.lock() {
+            if let Some(cached) = cache.as_ref().filter(|c| c.fingerprint == fingerprint) {
+                return Ok(Arc::clone(&cached.registry));
+            }
+        }
+        let registry = Arc::new(
+            (self.registry_factory)(configs, self.secure_store.clone()).map_err(provider_error)?,
+        );
+        if let Ok(mut cache) = self.registry_cache.lock() {
+            *cache = Some(CachedRegistry {
+                fingerprint,
+                registry: Arc::clone(&registry),
+            });
+        }
+        Ok(registry)
     }
     pub fn load_settings(&self) -> Result<AppSettings, AppErrorDto> {
         self.settings.load().map_err(|_| AppErrorDto::storage())
@@ -151,8 +211,7 @@ impl AppServices {
     }
     pub fn list_providers(&self) -> Result<Vec<ProviderOptionDto>, AppErrorDto> {
         let s = self.load_settings()?;
-        let registry = (self.registry_factory)(&s.providers, self.secure_store.clone())
-            .map_err(provider_error)?;
+        let registry = self.registry(&s.providers)?;
         Ok(s.providers
             .iter()
             .filter(|p| p.enabled() && (s.privacy_mode != PrivacyMode::LocalOnly || p.is_local()))
@@ -188,6 +247,7 @@ impl AppServices {
                     is_local: p.is_local(),
                     configured,
                     is_default: p.id() == &s.active_provider,
+                    limit_bytes: metadata.limit_bytes,
                     notice: if notices.is_empty() {
                         None
                     } else {
@@ -197,20 +257,28 @@ impl AppServices {
             })
             .collect())
     }
-    pub async fn translate_text(
+    /// Runs the privacy policy, provider dispatch, one transient retry and the input limit.
+    /// `provider_id` may name a provider that no longer exists (an old history entry); that falls
+    /// back to the current default instead of reporting a misleading configuration error.
+    async fn translate_with(
         &self,
         text: String,
-        source: String,
-        target: String,
-        provider_id: String,
-    ) -> Result<TranslationResultDto, AppErrorDto> {
+        source: &str,
+        target: &str,
+        provider_id: Option<&str>,
+    ) -> Result<PreparedTranslation, AppErrorDto> {
         let request =
-            TranslationRequest::new(text, parse_language(&source)?, parse_language(&target)?)
+            TranslationRequest::new(text, parse_language(source)?, parse_language(target)?)
                 .map_err(validation_error)?;
         let settings = self.load_settings()?;
-        let registry = (self.registry_factory)(&settings.providers, self.secure_store.clone())
-            .map_err(provider_error)?;
-        let selected = ProviderId::new(provider_id);
+        let registry = self.registry(&settings.providers)?;
+        let selected = provider_id
+            .map(ProviderId::new)
+            .filter(|id| registry.metadata(id).is_some())
+            .unwrap_or_else(|| settings.active_provider.clone());
+        if registry.metadata(&selected).is_none() {
+            return Err(provider_error(ProviderError::Configuration));
+        }
         // Validate the effective provider: LocalOnly may replace an online selection.
         let effective = if settings.privacy_mode == PrivacyMode::LocalOnly
             && !registry.metadata(&selected).is_some_and(|p| p.is_local)
@@ -221,27 +289,61 @@ impl AppServices {
         } else {
             selected.clone()
         };
-        if effective.as_str() == "mymemory" && request.text().len() > 500 {
-            return Err(AppErrorDto::new(
-                "input_too_long",
-                "MyMemory 每次最多支持 500 UTF-8 字节，请缩短原文或更换服务。",
-                false,
-            ));
+        if let Some(limit) = registry
+            .metadata(&effective)
+            .and_then(|meta| meta.limit_bytes)
+        {
+            if request.text().len() > limit {
+                return Err(AppErrorDto::new(
+                    "input_too_long",
+                    &format!(
+                        "该服务每次最多支持 {limit} 字节（当前 {} 字节），请缩短原文或更换服务。",
+                        request.text().len()
+                    ),
+                    false,
+                ));
+            }
         }
-        let result = TranslationRouter::new(registry)
-            .translate(
-                settings.privacy_mode,
-                &selected,
-                &request,
-                settings.fallback_enabled,
-            )
-            .await
-            .map_err(|e| match e {
-                TranslationError::Provider(p) => provider_error(p),
-                TranslationError::NoLocalProvider => no_local_provider(),
-            })?;
-        // Read again after await so disabling history during a pending request takes effect.
-        if settings.history_enabled && self.load_settings()?.history_enabled {
+        let router = TranslationRouter::new(&registry);
+        let mut retried = false;
+        let result = loop {
+            let attempt = router
+                .translate(
+                    settings.privacy_mode.clone(),
+                    &selected,
+                    &request,
+                    settings.fallback_enabled,
+                )
+                .await;
+            match attempt {
+                // Translation is a read-only operation, so one retry cannot duplicate work on the
+                // service side. Authentication and rate limits are terminal and never retried.
+                Err(TranslationError::Provider(error)) if !retried && error.is_transient() => {
+                    retried = true;
+                    tokio::time::sleep(RETRY_DELAY).await;
+                }
+                settled => break settled,
+            }
+        };
+        let result = result.map_err(|e| match e {
+            TranslationError::Provider(p) => provider_error(p),
+            TranslationError::NoLocalProvider => no_local_provider(),
+        })?;
+        Ok(PreparedTranslation { request, result })
+    }
+    pub async fn translate_text(
+        &self,
+        text: String,
+        source: String,
+        target: String,
+        provider_id: String,
+    ) -> Result<TranslationResultDto, AppErrorDto> {
+        let PreparedTranslation { request, result } = self
+            .translate_with(text, &source, &target, Some(&provider_id))
+            .await?;
+        // Read the policy after the round trip so disabling history mid-request takes effect. If
+        // the flag cannot be read, prefer not writing: history stays opt-out, never opt-in.
+        if self.settings.history_enabled().unwrap_or(false) {
             self.history
                 .insert(&HistoryEntry {
                     id: None,
@@ -260,6 +362,49 @@ impl AppServices {
             elapsed_ms: result.elapsed_ms,
             character_count: result.character_count,
         })
+    }
+    /// Re-runs an existing entry and rewrites it in place, so repeated retranslation does not
+    /// duplicate history. The original timestamp and id are preserved.
+    pub async fn retranslate_history_entry(
+        &self,
+        id: i64,
+        source_text: Option<String>,
+    ) -> Result<HistoryEntryDto, AppErrorDto> {
+        let entry = self
+            .history
+            .get(id)
+            .map_err(|_| AppErrorDto::storage())?
+            .ok_or_else(|| {
+                AppErrorDto::new(
+                    "history_missing",
+                    "该历史记录已不存在，可能已被删除。",
+                    false,
+                )
+            })?;
+        let text = source_text
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| entry.source_text.clone());
+        let PreparedTranslation { request, result } = self
+            .translate_with(
+                text,
+                entry.source_language.as_str(),
+                entry.target_language.as_str(),
+                Some(entry.provider_id.as_str()),
+            )
+            .await?;
+        let updated = HistoryEntry {
+            id: Some(id),
+            source_text: request.text().into(),
+            translated_text: result.translated_text,
+            source_language: entry.source_language,
+            target_language: entry.target_language,
+            provider_id: ProviderId::new(result.provider_id),
+            timestamp: entry.timestamp,
+        };
+        self.history
+            .update(&updated)
+            .map_err(|_| AppErrorDto::storage())?;
+        Ok(crate::commands::history::history_dto(updated))
     }
 }
 fn no_local_provider() -> AppErrorDto {
@@ -287,6 +432,12 @@ fn validation_error(e: ValidationError) -> AppErrorDto {
     }
 }
 fn provider_error(e: ProviderError) -> AppErrorDto {
+    let retry_after = match &e {
+        ProviderError::RateLimited {
+            retry_after_seconds,
+        } => *retry_after_seconds,
+        _ => None,
+    };
     let (code, message, retryable) = match e {
         ProviderError::Authentication => (
             "authentication",
@@ -313,7 +464,7 @@ fn provider_error(e: ProviderError) -> AppErrorDto {
             false,
         ),
     };
-    AppErrorDto::new(code, message, retryable)
+    AppErrorDto::new(code, message, retryable).with_retry_after(retry_after)
 }
 
 #[tauri::command]

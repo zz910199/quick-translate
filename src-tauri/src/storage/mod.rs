@@ -32,16 +32,50 @@ impl From<rusqlite::Error> for StorageError {
 
 struct Database(Mutex<Connection>);
 
+/// Two repositories over the same file may be opened concurrently. On Windows, a second
+/// connection that races the first one's file creation gets `SQLITE_READONLY`, so opening and
+/// migrating is serialized inside the process.
+static OPEN_LOCK: Mutex<()> = Mutex::new(());
+
 impl Database {
     /// The caller chooses the location and creates its containing directory.
     fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
+        let _guard = OPEN_LOCK
+            .lock()
+            .map_err(|_| StorageError::LockUnavailable)?;
         let connection = Connection::open(path)?;
         connection.busy_timeout(Duration::from_secs(5))?;
-        connection.execute_batch(include_str!("../../migrations/001_initial.sql"))?;
+        // A second process may still be applying the migration; retry instead of failing startup.
+        let migration = include_str!("../../migrations/001_initial.sql");
+        let mut attempt = 0u32;
+        loop {
+            match connection.execute_batch(migration) {
+                Ok(()) => break,
+                Err(error) if is_retryable(&error) && attempt < 8 => {
+                    let _ = connection.execute_batch("ROLLBACK;");
+                    attempt += 1;
+                    std::thread::sleep(Duration::from_millis(20 * u64::from(attempt)));
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
         Ok(Self(Mutex::new(connection)))
     }
 
     fn connection(&self) -> Result<MutexGuard<'_, Connection>, StorageError> {
         self.0.lock().map_err(|_| StorageError::LockUnavailable)
     }
+}
+
+fn is_retryable(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(code, _)
+            if matches!(
+                code.code,
+                rusqlite::ErrorCode::DatabaseBusy
+                    | rusqlite::ErrorCode::DatabaseLocked
+                    | rusqlite::ErrorCode::ReadOnly
+            )
+    )
 }

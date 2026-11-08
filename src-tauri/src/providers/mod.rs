@@ -23,6 +23,9 @@ use crate::{
 
 pub const CREDENTIAL_SERVICE: &str = "quick-translate";
 
+/// MyMemory rejects anything longer than this many UTF-8 bytes per request.
+pub const MYMEMORY_LIMIT_BYTES: usize = 500;
+
 #[derive(Clone, Copy)]
 pub struct HttpTimeouts {
     pub connect: Duration,
@@ -45,6 +48,8 @@ pub struct ProviderMetadata {
     pub is_local: bool,
     pub attribution: Option<String>,
     pub limits_notice: Option<String>,
+    /// Per-request input limit in UTF-8 bytes, when the service has a hard one.
+    pub limit_bytes: Option<usize>,
 }
 
 struct Entry {
@@ -116,11 +121,12 @@ impl ProviderRegistry {
         if self.entries.contains_key(config.id().as_str()) {
             return Err(ProviderError::Configuration);
         }
-        let (attribution, limits_notice) = if adapter.id() == "mymemory" {
+        let (attribution, limits_notice, limit_bytes) = if adapter.id() == "mymemory" {
             (Some("Translation provided by MyMemory (Translated). https://mymemory.translated.net/".into()),
-             Some("Online service: text is sent to MyMemory. Maximum 500 UTF-8 bytes per request; anonymous use is limited to 5,000 characters per day. Quotas and availability are set by the service and may change.".into()))
+             Some(format!("Online service: text is sent to MyMemory. Maximum {MYMEMORY_LIMIT_BYTES} UTF-8 bytes per request; anonymous use is limited to 5,000 characters per day. Quotas and availability are set by the service and may change.")),
+             Some(MYMEMORY_LIMIT_BYTES))
         } else {
-            (None, None)
+            (None, None, None)
         };
         self.entries.insert(
             config.id().as_str().into(),
@@ -132,6 +138,7 @@ impl ProviderRegistry {
                     is_local: config.is_local(),
                     attribution,
                     limits_notice,
+                    limit_bytes,
                 },
             },
         );

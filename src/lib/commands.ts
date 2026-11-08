@@ -2,8 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 export interface TranslationResultDto { translatedText: string; providerId: string; elapsedMs: number; characterCount: number }
 export interface LanguageOptionDto { code: string; label: string }
-export interface ProviderOptionDto { id: string; displayName: string; isLocal: boolean; configured: boolean; isDefault: boolean; notice?: string }
-export interface AppErrorDto { code: string; message: string; retryable: boolean }
+export interface ProviderOptionDto { id: string; displayName: string; isLocal: boolean; configured: boolean; isDefault: boolean; limitBytes?: number; notice?: string }
+export interface AppErrorDto { code: string; message: string; retryable: boolean; retryAfterSeconds?: number }
 export interface TranslationSelectionDto { source: string; target: string; providerId: string; privacyMode: "OnlinePreferred" | "LocalOnly" }
 export interface ScreenshotRect { x: number; y: number; width: number; height: number }
 export interface CapturedDisplayDto { id: string; originX: number; originY: number; scaleFactor: number; previewDataUrl: string; width: number; height: number }
@@ -34,6 +34,9 @@ export const saveSettings = (settings: SettingsInput) => invoke<void>("save_sett
 export const saveProviderConfig = (config: ProviderConfigInput) => invoke<void>("save_provider_config", { config });
 export const setProviderSecret = (providerId: string, secret: string) => invoke<void>("set_provider_secret", { providerId, secret });
 export const deleteProviderSecret = (providerId: string) => invoke<void>("delete_provider_secret", { providerId });
+export const deleteProviderConfig = (providerId: string) => invoke<void>("delete_provider_config", { providerId });
 export const listHistory = () => invoke<HistoryEntryDto[]>("list_history");
 export const deleteHistoryEntry = (id: number) => invoke<void>("delete_history_entry", { id });
 export const clearHistory = () => invoke<void>("clear_history");
+export const retranslateHistoryEntry = (id: number, sourceText?: string) =>
+  invoke<HistoryEntryDto>("retranslate_history_entry", { id, sourceText: sourceText ?? null });

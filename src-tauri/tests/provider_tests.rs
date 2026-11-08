@@ -555,7 +555,7 @@ async fn provider_tests_local_only_filters_before_dispatch_even_on_failure() {
             true,
             Err(ProviderError::Network),
         );
-        let router = TranslationRouter::new(registry);
+        let router = TranslationRouter::new(&registry);
         assert_eq!(
             router
                 .translate(
@@ -579,7 +579,7 @@ async fn provider_tests_local_only_empty_or_disabled_has_typed_error() {
     let remote = register(&mut registry, "remote", false, true, Ok("remote"));
     let disabled = register(&mut registry, "disabled-local", true, false, Ok("disabled"));
     assert_eq!(
-        TranslationRouter::new(registry)
+        TranslationRouter::new(&registry)
             .translate(
                 PrivacyMode::LocalOnly,
                 &ProviderId::new("remote"),
@@ -614,7 +614,7 @@ async fn provider_tests_online_selection_and_local_fallback_are_deterministic() 
             true,
             Ok("other remote"),
         );
-        let result = TranslationRouter::new(registry)
+        let result = TranslationRouter::new(&registry)
             .translate(
                 PrivacyMode::OnlinePreferred,
                 &ProviderId::new("remote"),
@@ -645,7 +645,7 @@ async fn provider_tests_successful_selection_skips_fallback_and_local_selection_
         let mut registry = ProviderRegistry::new();
         let selected = register(&mut registry, "z-selected", true, true, Ok("selected"));
         let other = register(&mut registry, "a-other", true, true, Ok("other"));
-        let result = TranslationRouter::new(registry)
+        let result = TranslationRouter::new(&registry)
             .translate(mode, &ProviderId::new("z-selected"), &request(), true)
             .await
             .unwrap();

@@ -130,6 +130,46 @@ pub async fn begin_screenshot_translation(
         app_error(error)
     })?;
     let dtos: Vec<_> = displays.into_iter().map(CapturedDisplayDto::from).collect();
+    // One overlay per display. Building them one after another made the overlays appear in
+    // sequence, so every monitor after the first paid a full WebView instance startup.
+    let mut builds = Vec::with_capacity(dtos.len());
+    for display in &dtos {
+        let app = app.clone();
+        let id = display.id.clone();
+        let (origin_x, origin_y) = (display.origin_x, display.origin_y);
+        let (width, height) = (display.width, display.height);
+        builds.push(tauri::async_runtime::spawn(async move {
+            let label = format!("screenshot-{id}");
+            let url = WebviewUrl::App(format!("index.html?screenshot={id}").into());
+            let window = WebviewWindowBuilder::new(&app, label, url)
+                .title("选择截图区域")
+                .decorations(false)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .visible(false)
+                .build()?;
+            window.set_position(Position::Physical(PhysicalPosition::new(
+                origin_x, origin_y,
+            )))?;
+            window.set_size(Size::Physical(PhysicalSize::new(width, height)))?;
+            window.show()?;
+            Ok::<String, tauri::Error>(id)
+        }));
+    }
+    let mut failed = false;
+    for build in builds {
+        match build.await {
+            Ok(Ok(_)) => {}
+            Ok(Err(_)) | Err(_) => failed = true,
+        }
+    }
+    if failed {
+        close_overlays(&app);
+        state.cancel();
+        open_translator(&app);
+        return Err(app_error(OcrError::CaptureUnavailable));
+    }
+    // A session may be cancelled or finished while the overlays were being built.
     for display in &dtos {
         if !state.is_current(&display.id) {
             close_session_overlays(&app, &display.id);
@@ -137,58 +177,6 @@ pub async fn begin_screenshot_translation(
                 return Ok(dtos);
             }
             return Err(app_error(OcrError::Cancelled));
-        }
-        let label = format!("screenshot-{}", display.id);
-        let url = WebviewUrl::App(format!("index.html?screenshot={}", display.id).into());
-        let window = WebviewWindowBuilder::new(&app, label, url)
-            .title("选择截图区域")
-            .decorations(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .visible(false)
-            .build()
-            .map_err(|_| app_error(OcrError::CaptureUnavailable));
-        match window {
-            Ok(window) => {
-                if window
-                    .set_position(Position::Physical(PhysicalPosition::new(
-                        display.origin_x,
-                        display.origin_y,
-                    )))
-                    .is_err()
-                    || window
-                        .set_size(Size::Physical(PhysicalSize::new(
-                            display.width,
-                            display.height,
-                        )))
-                        .is_err()
-                    || window.show().is_err()
-                {
-                    close_session_overlays(&app, &display.id);
-                    if state.is_finished(&display.id) {
-                        return Ok(dtos);
-                    }
-                    state.cancel_session(&display.id);
-                    open_translator(&app);
-                    return Err(app_error(OcrError::CaptureUnavailable));
-                }
-                if !state.is_current(&display.id) {
-                    close_session_overlays(&app, &display.id);
-                    if state.is_finished(&display.id) {
-                        return Ok(dtos);
-                    }
-                    return Err(app_error(OcrError::Cancelled));
-                }
-            }
-            Err(error) => {
-                close_session_overlays(&app, &display.id);
-                if state.is_finished(&display.id) {
-                    return Ok(dtos);
-                }
-                state.cancel_session(&display.id);
-                open_translator(&app);
-                return Err(error);
-            }
         }
     }
     Ok(dtos)

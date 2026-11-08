@@ -31,3 +31,11 @@ pub enum ProviderError {
     #[error("provider configuration is invalid")]
     Configuration,
 }
+
+impl ProviderError {
+    /// Failures worth one automatic retry: nothing reached the service, or it answered without
+    /// producing a result. Authentication, rate limits and configuration are never retried.
+    pub fn is_transient(&self) -> bool {
+        matches!(self, Self::Network | Self::Timeout)
+    }
+}

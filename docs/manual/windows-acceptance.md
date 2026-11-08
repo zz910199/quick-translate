@@ -39,9 +39,25 @@ App-owned data must remain under `D:/QuickTranslate/Data` (SQLite, WebView data 
 3. Enter an invalid accelerator or one owned by another application. Save must show an actionable error and preserve the previous working key/settings. Start the app while its configured key is already occupied: the translator should remain usable and display an error with an 打开设置 action.
 4. Use each tray menu action: 打开翻译器 restores/focuses the main window; 截图翻译 follows the same session workflow; 退出 closes the application and releases its global shortcut. Confirm no app process remains after Quit. Repeated quick shortcut presses during capture startup should not create competing startup requests.
 
+## Window lifecycle
+
+1. Open the translator, then close it with the title-bar ×. Confirm the process survives in Task Manager, the tray icon stays, and the global shortcut still starts a capture. Reopen from the tray.
+2. Use 退出 in the tray menu. Confirm the process ends, the tray icon disappears and the shortcut is released.
+
+## Optimization wave (2026-11-08)
+
+1. Translate a long Chinese paragraph with MyMemory selected. Confirm the counter reads bytes (`x / 500 字节`) rather than characters, turns red past the limit, and the translate button is disabled instead of failing after a request.
+2. Delete the currently selected service in Settings. Confirm the confirmation appears first, the configuration disappears, and the default service falls back to a remaining one. Confirm no `provider:<id>` credential is left in Credential Manager.
+3. Use 重新翻译 on a history row. Confirm the row is updated in place, the list still holds the same number of entries, and 已更新这条记录 appears. Then delete the service that entry used and retranslate again: the row must still update, using the current default service, with a message naming it.
+4. With a local provider stopped (or networking off), translate once. Confirm one automatic retry happens before the error appears, and the error still offers 重试.
+5. Press the screenshot shortcut on a high-resolution or multi-display setup. Confirm the overlay still aligns with the physical selection and appears for all displays together rather than one after another. The preview is downscaled to 2560 px on the long edge; OCR still uses the full-resolution capture.
+
 ## Acceptance status
 
 Task 8 automated verification (`npm run check`) passed on 2026-10-17: 26 UI tests, 59 Rust tests and 2 compile-fail doctests. This includes real loopback HTTP + temporary SQLite application service integration for manual translation, history policy and edited OCR confirmation routed to a local provider in sensitive mode. No live credentials or external services are needed for these tests.
+
+The 2026-11-08 optimization wave re-ran `npm run check` with 30 UI tests, 73 Rust tests and the same 2 compile-fail doctests, plus a clean production build. New coverage: in-place history retranslation, provider fallback for removed services, single transient retry, registry cache invalidation after a configuration change, provider deletion with reselection, byte-limit metadata, preview downscaling, and concurrent repository opening on one SQLite file. Everything in the "Window lifecycle" and "Optimization wave" sections above is unverified on the packaged application.
+
 
 The final `npm run tauri -- build` passed on 2026-10-17 and produced `Quick Translate_0.1.0_x64-setup.exe` (3,825,248 bytes; SHA-256 `BB5DFAE3C006B0AA5EA1BF765DA07470A709E4625D222F1D6CAB0331D5225E2E`). Generated NSIS source confirms `currentUser`, `RequestExecutionLevel user` and an interactive directory page. The installer is unsigned. Bundler cache was verified under the project's D-drive `src-tauri/target/.tauri/NSIS`, with no `C:/Users/july/AppData/Local/tauri` directory after the final build. These build/source checks do not establish successful installation.
 

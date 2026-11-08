@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { deleteProviderSecret, getSettings, listLanguages, saveProviderConfig, saveSettings, setProviderSecret,
+import { deleteProviderConfig, deleteProviderSecret, getSettings, listLanguages, saveProviderConfig, saveSettings, setProviderSecret,
   type AppErrorDto, type LanguageOptionDto, type ProviderConfigInput, type SettingsDto } from "../../lib/commands";
 import { safeAppError } from "../translate/translate-state";
 
@@ -20,6 +20,7 @@ export function SettingsView() {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [addingProvider, setAddingProvider] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => {
     let active = true;
     void Promise.all([getSettings(), listLanguages()]).then(([s, ls]) => {
@@ -39,7 +40,7 @@ export function SettingsView() {
   function chooseProvider(id: string) {
     if (id === "new") { setAddingProvider(true); setConfig(blankProvider(settings?.providers)); }
     else { setAddingProvider(false); setConfig(settings?.providers.find(p => p.id === id) ?? blankProvider(settings?.providers)); }
-    setSecret(""); setStatus(""); setError(null);
+    setSecret(""); setStatus(""); setError(null); setConfirmDelete(false);
   }
   return <section className="settings-view" aria-label="设置">
     <h2>设置</h2>
@@ -82,6 +83,17 @@ export function SettingsView() {
           const loaded = await getSettings(); setSettings({...loaded, source:settings.source,target:settings.target,privacyMode:settings.privacyMode,historyEnabled:settings.historyEnabled,fallbackEnabled:settings.fallbackEnabled,shortcut:settings.shortcut});
           setAddingProvider(false); setConfig(loaded.providers.find(provider => provider.id === id) ?? config);
         })}>保存服务</button>
+        {confirmDelete ? <div className="settings-actions" role="alertdialog" aria-label="删除服务确认">
+          <span>删除 {config.displayName || config.id}？服务配置与已保存的密钥都会被移除。</span>
+          <button type="button" onClick={() => void action(async () => {
+            await deleteProviderConfig(config.id);
+            const loaded = await getSettings();
+            setSettings({...loaded, source:settings.source,target:settings.target,privacyMode:settings.privacyMode,historyEnabled:settings.historyEnabled,fallbackEnabled:settings.fallbackEnabled,shortcut:settings.shortcut});
+            setAddingProvider(false); setConfirmDelete(false); setSecret("");
+            setConfig(loaded.providers[0] ?? blankProvider(loaded.providers));
+          })}>确认删除</button>
+          <button type="button" onClick={() => setConfirmDelete(false)}>取消</button>
+        </div> : <button type="button" disabled={!settings.providers.some(provider => provider.id === config.id)} onClick={() => setConfirmDelete(true)}>删除服务</button>}
         <p aria-label="密钥状态">{config.id === "mymemory" ? "无需密钥" : configured ? "已配置" : "未配置"}</p>
         <label>API 密钥<input type="password" disabled={config.id === "mymemory"} autoComplete="new-password" value={secret} onChange={e => setSecret(e.target.value)} /></label>
         <p className="provider-notice">密钥保存在系统凭据管理器中；保存后输入框清空。请先保存服务配置。</p>

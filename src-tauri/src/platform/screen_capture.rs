@@ -59,21 +59,50 @@ pub fn wait_for_compositor() -> Result<(), CaptureError> {
     Err(CaptureError::Unavailable)
 }
 
+/// The overlay stretches the preview to the window, so a preview far beyond the display resolution
+/// only adds encode time, IPC payload and WebView decode work.
 #[cfg(windows)]
-fn encode_preview(rgba: &[u8], width: u32, height: u32) -> Result<String, CaptureError> {
+const MAX_PREVIEW_EDGE: u32 = 2560;
+
+#[cfg(windows)]
+fn preview_size(width: u32, height: u32) -> (u32, u32) {
+    let longest = width.max(height);
+    if longest <= MAX_PREVIEW_EDGE {
+        return (width, height);
+    }
+    let scale = MAX_PREVIEW_EDGE as f64 / f64::from(longest);
+    (
+        ((f64::from(width) * scale).round() as u32).max(1),
+        ((f64::from(height) * scale).round() as u32).max(1),
+    )
+}
+
+#[cfg(windows)]
+fn encode_preview(rgb: &[u8], width: u32, height: u32) -> Result<String, CaptureError> {
     use base64::{engine::general_purpose::STANDARD, Engine};
     use image::{codecs::jpeg::JpegEncoder, ColorType};
-    let expected = width as usize * height as usize * 4;
-    if rgba.len() != expected {
+    if rgb.len() != width as usize * height as usize * 3 {
         return Err(CaptureError::Unavailable);
     }
-    let mut rgb = Vec::with_capacity(width as usize * height as usize * 3);
-    for pixel in rgba.chunks_exact(4) {
-        rgb.extend_from_slice(&pixel[..3]);
-    }
+    let (preview_width, preview_height) = preview_size(width, height);
+    let scaled;
+    let (bytes, encode_width, encode_height) = if (preview_width, preview_height) == (width, height)
+    {
+        (rgb, width, height)
+    } else {
+        let source = image::RgbImage::from_raw(width, height, rgb.to_vec())
+            .ok_or(CaptureError::Unavailable)?;
+        scaled = image::imageops::resize(
+            &source,
+            preview_width,
+            preview_height,
+            image::imageops::FilterType::Triangle,
+        );
+        (scaled.as_raw().as_slice(), preview_width, preview_height)
+    };
     let mut jpeg = Vec::new();
     JpegEncoder::new_with_quality(&mut jpeg, 75)
-        .encode(&rgb, width, height, ColorType::Rgb8.into())
+        .encode(bytes, encode_width, encode_height, ColorType::Rgb8.into())
         .map_err(|_| CaptureError::Unavailable)?;
     Ok(format!("data:image/jpeg;base64,{}", STANDARD.encode(jpeg)))
 }
@@ -83,7 +112,7 @@ mod preview_tests {
     use super::*;
     #[test]
     fn rgba_capture_encodes_as_readable_jpeg_preview() {
-        let url = encode_preview(&[255, 0, 0, 255], 1, 1).unwrap();
+        let url = encode_preview(&[255, 0, 0], 1, 1).unwrap();
         let encoded = url.strip_prefix("data:image/jpeg;base64,").unwrap();
         use base64::Engine;
         let bytes = base64::engine::general_purpose::STANDARD
@@ -91,6 +120,31 @@ mod preview_tests {
             .unwrap();
         let decoded = image::load_from_memory(&bytes).unwrap();
         assert_eq!((decoded.width(), decoded.height()), (1, 1));
+    }
+
+    #[test]
+    fn preview_size_caps_the_longest_edge_and_keeps_aspect() {
+        assert_eq!(preview_size(3840, 2160), (2560, 1440));
+        assert_eq!(preview_size(1920, 1080), (1920, 1080));
+        assert_eq!(preview_size(1080, 3840), (720, 2560));
+    }
+
+    #[test]
+    fn oversized_capture_is_downscaled_before_encoding() {
+        let width = 3000u32;
+        let height = 2u32;
+        let rgb = vec![128u8; width as usize * height as usize * 3];
+        let url = encode_preview(&rgb, width, height).unwrap();
+        let encoded = url.strip_prefix("data:image/jpeg;base64,").unwrap();
+        use base64::Engine;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .unwrap();
+        let decoded = image::load_from_memory(&bytes).unwrap();
+        assert_eq!(
+            (decoded.width(), decoded.height()),
+            preview_size(width, height)
+        );
     }
 }
 
@@ -295,11 +349,14 @@ mod windows_capture {
             std::slice::from_raw_parts(bits as *const u8, width as usize * height as usize * 4)
         }
         .to_vec();
+        // One pass: BGRA -> RGBA for OCR, and the packed RGB bytes the preview encoder needs.
+        let mut rgb = Vec::with_capacity(width as usize * height as usize * 3);
         for pixel in rgba.chunks_exact_mut(4) {
             pixel.swap(0, 2);
             pixel[3] = 255;
+            rgb.extend_from_slice(&pixel[..3]);
         }
-        let preview_data_url = encode_preview(&rgba, width, height)?;
+        let preview_data_url = encode_preview(&rgb, width, height)?;
         Ok(CapturedDisplay {
             id: format!("display-{index}"),
             origin_x: rect.left,
