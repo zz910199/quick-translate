@@ -1,6 +1,16 @@
 # Quick Translate
 
-Windows 优先的个人快捷翻译工具：手动小窗口、截图框选和 Windows OCR、可编辑识别文本、服务切换、敏感模式、历史记录、剪贴板、全局快捷键和系统托盘。当前版本 `0.1.0`。
+Windows 优先的个人快捷翻译工具：手动小窗口、截图框选和 Windows OCR、可编辑识别文本、服务切换、敏感模式、历史记录、剪贴板、全局快捷键和系统托盘。当前版本 `0.1.2`。
+
+## 界面
+
+主窗口 640×440，顶部为单行工具栏（品牌、分段导航、截图入口），底部为固定操作条——「输入 → 翻译 → 复制」全程无需滚动。支持 `Ctrl+Enter` 翻译、语言一键互换、原文一键清空；亮/暗主题跟随系统。
+
+| 翻译 | 历史 | 设置 |
+| --- | --- | --- |
+| ![翻译视图](docs/screenshots/shot-translate.png) | ![历史视图](docs/screenshots/shot-history.png) | ![设置视图](docs/screenshots/shot-settings.png) |
+
+截图来自 `preview.html` 浏览器预览（Tauri IPC 已打桩），渲染内容与实际应用一致。
 
 ## 使用与安装
 
