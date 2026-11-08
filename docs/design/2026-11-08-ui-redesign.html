@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quick Translate · 界面设计方案 0.2</title>
+<style>
+/* ============================================================
+   Design tokens — 可直接搬入 src/styles.css
+   ============================================================ */
+:root {
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-15: 15px;
+  --fs-20: 20px;
+
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 14px;
+  --sp-6: 16px;
+  --sp-7: 20px;
+  --sp-8: 24px;
+
+  --r-sm: 5px;
+  --r-md: 7px;
+  --r-lg: 10px;
+  --r-pill: 999px;
+
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+
+  /* ---- light ---- */
+  --bg: #f6f7f7;
+  --surface: #ffffff;
+  --surface-2: #eef1f1;
+  --surface-3: #e5e9e9;
+  --line: rgba(15, 35, 38, .09);
+  --line-strong: rgba(15, 35, 38, .16);
+  --ink: #0f1719;
+  --ink-2: #4f6167;
+  --ink-3: #63757b;
+  --accent: #0a7c82;
+  --accent-strong: #076468;
+  --accent-soft: #e4f2f2;
+  --accent-ink: #0a666b;
+  --accent-on: #ffffff;
+  --danger: #b03a2e;
+  --danger-soft: #fcf0ee;
+  --danger-line: #eccfc9;
+  --ok: #1c7a4a;
+  --warn-ink: #7a5200;
+  --warn-soft: #fdf4e3;
+  --shadow-1: 0 1px 2px rgba(15, 35, 38, .05), 0 1px 3px rgba(15, 35, 38, .04);
+  --shadow-2: 0 4px 14px rgba(15, 35, 38, .10);
+  --scrim: rgba(8, 14, 16, .55);
+}
+
+[data-theme="dark"] {
+  --bg: #0f1417;
+  --surface: #1a2125;
+  --surface-2: #212a2e;
+  --surface-3: #2a3438;
+  --line: rgba(255, 255, 255, .10);
+  --line-strong: rgba(255, 255, 255, .18);
+  --ink: #e6eced;
+  --ink-2: #a3b4b8;
+  --ink-3: #829499;
+  --accent: #43bdb7;
+  --accent-strong: #63d3cd;
+  --accent-soft: rgba(67, 189, 183, .14);
+  --accent-ink: #8fdcd7;
+  --accent-on: #06211f;
+  --danger: #e8776a;
+  --danger-soft: rgba(232, 119, 106, .12);
+  --danger-line: rgba(232, 119, 106, .34);
+  --ok: #5cc98d;
+  --warn-ink: #e0b060;
+  --warn-soft: rgba(224, 176, 96, .12);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-2: 0 6px 18px rgba(0, 0, 0, .5);
+  --scrim: rgba(0, 0, 0, .62);
+}
+
+/* ============================================================
+   Page chrome (design board, not part of the product)
+   ============================================================ */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--font-ui);
+  background:
+    radial-gradient(1100px 520px at 50% -12%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%),
+    var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 64px;
+}
+
+.board-bar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4);
+  padding: 10px var(--sp-7);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
+  border-bottom: 1px solid var(--line);
+}
+.board-brand { display: flex; align-items: baseline; gap: var(--sp-3); margin-right: auto; }
+.board-brand strong { font-size: var(--fs-14); font-weight: 650; letter-spacing: -.01em; }
+.board-brand span { font-size: var(--fs-11); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.ctl-group { display: flex; align-items: center; gap: var(--sp-2); }
+.ctl-label { font-size: var(--fs-11); color: var(--ink-3); letter-spacing: .02em; }
+
+.board-seg { display: inline-flex; padding: 2px; gap: 2px; background: var(--surface-2); border-radius: var(--r-md); }
+.board-seg button {
+  appearance: none; border: 0; background: transparent; color: var(--ink-2);
+  font: inherit; font-size: var(--fs-12); padding: 5px 10px; border-radius: var(--r-sm);
+  cursor: pointer; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.board-seg button:hover { color: var(--ink); }
+.board-seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow-1); }
+.board-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.switch-mini { display: inline-flex; align-items: center; gap: 7px; font-size: var(--fs-12); color: var(--ink-2); cursor: pointer; }
+
+/* Stage */
+.stage { display: grid; place-items: center; padding: 40px var(--sp-7) 28px; }
+.win-wrap { position: relative; }
+
+.win {
+  width: 640px; height: 440px;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  border-radius: var(--r-lg);
+  box-shadow: 0 0 0 1px var(--line-strong), 0 18px 44px -14px rgba(8, 20, 22, .30), 0 4px 10px rgba(8, 20, 22, .08);
+  overflow: hidden;
+  font-size: var(--fs-13);
+  color: var(--ink);
+}
+
+/* Guides */
+.guides { position: absolute; inset: 0; pointer-events: none; }
+.guides[hidden] { display: none; }
+.gline { position: absolute; left: 0; right: 0; border-top: 1px dashed color-mix(in srgb, var(--accent) 62%, transparent); }
+.gline span {
+  position: absolute; right: 6px; top: -8px;
+  font: 600 10px/1 var(--font-mono); color: var(--accent);
+  background: var(--surface); padding: 2px 4px; border-radius: 3px;
+}
+.gframe { position: absolute; inset: 0; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); border-radius: var(--r-lg); }
+
+/* ============================================================
+   PRODUCT — Top bar (44px)
+   ============================================================ */
+.qt-topbar {
+  flex: none; height: 44px;
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: 0 var(--sp-4) 0 var(--sp-5);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.qt-brand { display: flex; align-items: center; gap: 7px; margin-right: 2px; }
+.qt-mark {
+  width: 20px; height: 20px; border-radius: 6px; flex: none;
+  background: linear-gradient(150deg, var(--accent), color-mix(in srgb, var(--accent) 72%, #063c3f));
+  color: var(--accent-on);
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; letter-spacing: -.02em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28);
+}
+.qt-brand-name { font-size: var(--fs-13); font-weight: 620; letter-spacing: -.01em; white-space: nowrap; }
+
+.qt-seg {
+  display: inline-flex; align-items: center; gap: 2px; padding: 2px;
+  background: var(--surface-2); border-radius: var(--r-md);
+}
+.qt-seg button {
+  appearance: none; border: 0; background: transparent;
+  font: inherit; font-size: var(--fs-12); color: var(--ink-2);
+  height: 24px; padding: 0 10px; border-radius: var(--r-sm);
+  cursor: pointer; transition: all var(--dur-1) var(--ease); white-space: nowrap;
+}
+.qt-seg button:hover { color: var(--ink); }
+.qt-seg button[aria-selected="true"] {
+  background: var(--surface); color: var(--ink); font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 35, 38, .10);
+}
+.qt-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.qt-topbar-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.qt-icon-btn {
+  width: 28px; height: 28px; display: grid; place-items: center;
+  appearance: none; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--ink-2); cursor: pointer;
+  transition: all var(--dur-1) var(--ease);
+}
+.qt-icon-btn:hover { background: var(--surface-2); color: var(--accent-ink); }
+.qt-icon-btn:active { background: var(--surface-3); }
+.qt-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.qt-icon-btn svg { width: 16px; height: 16px; }
+.qt-icon-btn .kbd-tip { display: none; }
+
+/* ============================================================
+   PRODUCT — Language bar (44px)
+   ============================================================ */
+.qt-langbar {
+  flex: none; height: 44px;
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: 0 var(--sp-5);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.qt-lang { position: relative; display: flex; align-items: center; min-width: 0; }
+.qt-lang select {
+  appearance: none; -webkit-appearance: none;
+  height: 28px; padding: 0 26px 0 9px;
+  max-width: 150px;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; color: var(--ink);
+  font: inherit; font-size: var(--fs-13); font-weight: 550;
+  cursor: pointer; transition: all var(--dur-1) var(--ease);
+  text-overflow: ellipsis;
+}
+.qt-lang select:hover { background: var(--surface-2); }
+.qt-lang select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; background: var(--surface); border-color: var(--line); }
+.qt-lang::after {
+  content: ""; position: absolute; right: 9px; top: 50%; width: 0; height: 0;
+  margin-top: -1px; pointer-events: none;
+  border-left: 3.5px solid transparent; border-right: 3.5px solid transparent;
+  border-top: 4px solid var(--ink-3);
+}
+.qt-swap {
+  width: 24px; height: 24px; flex: none; display: grid; place-items: center;
+  appearance: none; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--ink-3); cursor: pointer;
+  transition: all var(--dur-1) var(--ease);
+}
+.qt-swap:hover { background: var(--accent-soft); color: var(--accent-ink); }
+.qt-swap:active svg { transform: rotate(180deg); }
+.qt-swap svg { width: 15px; height: 15px; transition: transform var(--dur-2) var(--ease); }
+.qt-swap:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.qt-provider {
+  margin-left: auto; display: flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 8px 0 7px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--ink-2); font-size: var(--fs-11);
+}
+.qt-provider .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
+.qt-provider.local .dot { background: var(--accent); }
+.qt-provider select {
+  appearance: none; border: 0; background: transparent; color: inherit;
+  font: inherit; font-size: var(--fs-11); font-weight: 600;
+  padding-right: 12px; cursor: pointer; max-width: 108px;
+}
+
+/* ============================================================
+   PRODUCT — Workspace (flex 1)
+   ============================================================ */
+.qt-workspace {
+  flex: 1 1 auto; min-height: 0;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  padding: 0 var(--sp-4) var(--sp-4);
+}
+.qt-pane {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.qt-pane:focus-within { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-1); }
+.qt-pane-head {
+  flex: none; display: flex; align-items: center; gap: var(--sp-2);
+  height: 32px; padding: 0 8px 0 11px;
+  border-bottom: 1px solid var(--line);
+}
+.qt-pane-title { font-size: var(--fs-11); font-weight: 620; color: var(--ink-3); letter-spacing: .06em; text-transform: uppercase; }
+.qt-pane-tools { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+
+.qt-mini {
+  height: 22px; padding: 0 6px; display: inline-flex; align-items: center; gap: 4px;
+  appearance: none; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--ink-3);
+  font: inherit; font-size: var(--fs-11); font-weight: 550; cursor: pointer;
+  transition: all var(--dur-1) var(--ease);
+}
+.qt-mini:hover { background: var(--accent-soft); color: var(--accent-ink); }
+.qt-mini:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.qt-mini svg { width: 13px; height: 13px; }
+.qt-mini[data-state="done"] { color: var(--ok); }
+
+.qt-pane-body { flex: 1 1 auto; min-height: 0; position: relative; }
+.qt-pane textarea {
+  width: 100%; height: 100%; resize: none;
+  padding: 10px 11px; border: 0; background: transparent; color: var(--ink);
+  font: inherit; font-size: var(--fs-14); line-height: 1.62;
+  overflow: auto;
+}
+.qt-pane textarea:focus { outline: none; }
+.qt-pane textarea::placeholder { color: var(--ink-3); font-size: var(--fs-13); }
+
+.qt-output {
+  position: absolute; inset: 0; overflow: auto;
+  padding: 10px 11px;
+  font-size: var(--fs-14); line-height: 1.62;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.qt-output.is-empty { color: var(--ink-3); font-size: var(--fs-13); display: flex; flex-direction: column; gap: 4px; justify-content: center; align-items: center; text-align: center; padding: 0 18px; }
+.qt-output.is-empty .hint { font-size: var(--fs-11); color: var(--ink-3); opacity: .85; }
+
+.qt-pane-foot {
+  flex: none; height: 26px; display: flex; align-items: center; gap: var(--sp-2);
+  padding: 0 11px; border-top: 1px solid var(--line);
+  font-size: var(--fs-11); color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.qt-pane-foot .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.qt-over { color: var(--danger); font-weight: 620; }
+.qt-saved { color: var(--ok); font-weight: 600; }
+
+/* Skeleton for loading */
+.qt-skeleton { display: grid; gap: 9px; padding: 12px 11px; }
+.qt-skeleton i {
+  display: block; height: 11px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 42%, var(--surface-2) 84%);
+  background-size: 220% 100%;
+  animation: shimmer 1.25s var(--ease) infinite;
+}
+@keyframes shimmer { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+
+/* ============================================================
+   PRODUCT — Alert (inserted, compresses workspace)
+   ============================================================ */
+.qt-alert {
+  flex: none; display: flex; align-items: center; gap: var(--sp-3);
+  margin: 0 var(--sp-4) 10px; padding: 8px 10px;
+  border: 1px solid var(--danger-line); border-radius: var(--r-md);
+  background: var(--danger-soft); color: var(--danger);
+  font-size: var(--fs-12); line-height: 1.45;
+}
+.qt-alert svg { width: 15px; height: 15px; flex: none; }
+.qt-alert .msg { min-width: 0; }
+.qt-alert button {
+  margin-left: auto; flex: none;
+  height: 24px; padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+  border-radius: var(--r-sm); background: var(--surface);
+  color: var(--danger); font: inherit; font-size: var(--fs-11); font-weight: 600; cursor: pointer;
+}
+.qt-alert button:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+.qt-alert button:focus-visible { outline: 2px solid var(--danger); outline-offset: 1px; }
+
+/* ============================================================
+   PRODUCT — Action bar (52px)
+   ============================================================ */
+.qt-actionbar {
+  flex: none; height: 52px;
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: 0 var(--sp-4) 0 var(--sp-5);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+.qt-status { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-11); color: var(--ink-3); }
+.qt-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
+.qt-status .dot.local { background: var(--accent); }
+.qt-status span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.qt-action-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.qt-kbd-hint { display: flex; align-items: center; gap: 3px; font-size: var(--fs-11); color: var(--ink-3); }
+.qt-kbd-hint kbd {
+  font: 600 10px/1 var(--font-ui); color: var(--ink-2);
+  background: var(--surface-2); border: 1px solid var(--line-strong);
+  border-bottom-width: 2px; border-radius: 4px; padding: 2px 4px;
+}
+
+.qt-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; padding: 0 16px;
+  appearance: none; border: 0; border-radius: var(--r-md);
+  font: inherit; font-size: var(--fs-13); font-weight: 620; letter-spacing: .01em;
+  cursor: pointer; white-space: nowrap;
+  transition: all var(--dur-1) var(--ease);
+}
+.qt-btn-primary { background: var(--accent); color: var(--accent-on); box-shadow: 0 1px 2px rgba(10, 124, 130, .28); }
+.qt-btn-primary:hover { background: var(--accent-strong); }
+.qt-btn-primary:active { transform: translateY(.5px); box-shadow: none; }
+.qt-btn-primary:disabled { background: var(--surface-3); color: var(--ink-3); box-shadow: none; cursor: default; }
+.qt-btn-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.qt-btn svg { width: 14px; height: 14px; }
+
+.qt-spinner {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1.8px solid color-mix(in srgb, var(--accent-on) 32%, transparent);
+  border-top-color: var(--accent-on);
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.qt-btn-ghost {
+  height: 26px; padding: 0 10px; display: inline-flex; align-items: center; gap: 5px;
+  appearance: none; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--ink-2);
+  font: inherit; font-size: var(--fs-11); font-weight: 600; cursor: pointer;
+  transition: all var(--dur-1) var(--ease);
+}
+.qt-btn-ghost:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line-strong)); color: var(--accent-ink); background: var(--accent-soft); }
+.qt-btn-ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.qt-btn-ghost.danger:hover { border-color: var(--danger-line); color: var(--danger); background: var(--danger-soft); }
+
+/* ============================================================
+   PRODUCT — History
+   ============================================================ */
+.qt-view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.qt-toolrow {
+  flex: none; height: 40px; display: flex; align-items: center; gap: var(--sp-2);
+  padding: 0 var(--sp-4) 0 var(--sp-5);
+}
+.qt-toolrow .count { font-size: var(--fs-11); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.qt-toolrow .spacer { margin-left: auto; }
+.qt-search {
+  display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--ink-3); min-width: 150px;
+}
+.qt-search svg { width: 13px; height: 13px; flex: none; }
+.qt-search input {
+  border: 0; background: transparent; font: inherit; font-size: var(--fs-12);
+  color: var(--ink); outline: none; width: 100%; padding: 0;
+}
+.qt-search input::placeholder { color: var(--ink-3); }
+.qt-search:focus-within { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.qt-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 var(--sp-4) var(--sp-4); display: grid; gap: 6px; align-content: start; }
+.qt-card {
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface); padding: 8px 10px;
+  display: grid; gap: 4px; position: relative;
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.qt-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-1); }
+.qt-card .src { margin: 0; font-size: var(--fs-13); color: var(--ink); line-height: 1.5; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+.qt-card .dst { margin: 0; font-size: var(--fs-12); color: var(--ink-2); line-height: 1.55; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+.qt-card .row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.qt-card .meta { font-size: var(--fs-11); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.qt-card .ops { margin-left: auto; display: flex; gap: 2px; opacity: 0; transition: opacity var(--dur-1) var(--ease); }
+.qt-card:hover .ops, .qt-card:focus-within .ops { opacity: 1; }
+.qt-tag {
+  font-size: 10px; font-weight: 620; letter-spacing: .02em;
+  padding: 1px 5px; border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--ink-3);
+}
+.qt-tag.updated { background: var(--accent-soft); color: var(--accent-ink); }
+.qt-tag.failed { background: var(--danger-soft); color: var(--danger); }
+
+/* ============================================================
+   PRODUCT — Settings
+   ============================================================ */
+.qt-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 12px var(--sp-4) var(--sp-4); display: grid; gap: 10px; align-content: start; }
+.qt-group { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); overflow: hidden; box-shadow: var(--shadow-1); }
+.qt-group-head {
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  padding: 9px 12px 7px;
+  border-bottom: 1px solid var(--line);
+}
+.qt-group-head h3 { margin: 0; font-size: var(--fs-12); font-weight: 650; letter-spacing: .01em; }
+.qt-group-head .desc { font-size: var(--fs-11); color: var(--ink-3); }
+.qt-row { display: flex; align-items: center; gap: var(--sp-3); padding: 8px 12px; min-height: 38px; }
+.qt-row + .qt-row { border-top: 1px solid var(--line); }
+.qt-row .label { font-size: var(--fs-12); font-weight: 550; }
+.qt-row .sub { font-size: var(--fs-11); color: var(--ink-3); margin-top: 1px; }
+.qt-row .grow { min-width: 0; flex: 1; }
+.qt-row .ops { display: flex; align-items: center; gap: 6px; flex: none; }
+
+.qt-switch {
+  position: relative; width: 34px; height: 20px; flex: none;
+  appearance: none; border: 0; border-radius: var(--r-pill);
+  background: var(--surface-3); cursor: pointer;
+  transition: background var(--dur-2) var(--ease);
+}
+.qt-switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .28);
+  transition: transform var(--dur-2) var(--ease);
+}
+.qt-switch[aria-checked="true"] { background: var(--accent); }
+.qt-switch[aria-checked="true"]::after { transform: translateX(14px); }
+.qt-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.qt-badge { font-size: 10px; font-weight: 620; padding: 2px 6px; border-radius: var(--r-pill); }
+.qt-badge.ok { background: var(--accent-soft); color: var(--accent-ink); }
+.qt-badge.warn { background: var(--warn-soft); color: var(--warn-ink); }
+
+.qt-kbd-row { display: flex; align-items: center; gap: 4px; }
+.qt-kbd-row kbd {
+  font: 600 10px/1 var(--font-ui); color: var(--ink-2);
+  background: var(--surface-2); border: 1px solid var(--line-strong); border-bottom-width: 2px;
+  border-radius: 4px; padding: 3px 5px;
+}
+
+/* ============================================================
+   PRODUCT — Capture overlay
+   ============================================================ */
+.qt-capture { position: absolute; inset: 0; background: #10161a; overflow: hidden; }
+.qt-capture .shot {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(155deg, #f2efe9 0%, #e8e4dc 46%, #dcd7cd 100%);
+  filter: saturate(.85);
+}
+.qt-capture .shot::before {
+  content: ""; position: absolute; inset: 34px 44px 150px 68px;
+  background:
+    repeating-linear-gradient(0deg, #9aa3a8 0 7px, transparent 7px 15px) 0 0 / 58% 100% no-repeat,
+    repeating-linear-gradient(0deg, #b6bcc0 0 7px, transparent 7px 15px) 4% 52px / 44% 100% no-repeat;
+  opacity: .5;
+  border-radius: 3px;
+}
+.qt-capture .veil { position: absolute; inset: 0; background: var(--scrim); }
+.qt-sel {
+  position: absolute; left: 116px; top: 96px; width: 328px; height: 156px;
+  border: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  box-shadow: 0 0 0 9999px color-mix(in srgb, var(--scrim) 78%, transparent), 0 0 0 1px rgba(255, 255, 255, .35);
+}
+.qt-sel .dim {
+  position: absolute; left: 0; bottom: -22px;
+  font: 600 10px/1 var(--font-mono); color: #fff;
+  background: var(--accent); padding: 4px 6px; border-radius: 4px;
+  white-space: nowrap;
+}
+.qt-sel .corner { position: absolute; width: 7px; height: 7px; border: 2px solid var(--accent); background: #fff; }
+.qt-sel .c1 { left: -4px; top: -4px; }
+.qt-sel .c2 { right: -4px; top: -4px; }
+.qt-sel .c3 { left: -4px; bottom: -4px; }
+.qt-sel .c4 { right: -4px; bottom: -4px; }
+.qt-capture .hintbar {
+  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px 7px 14px; border-radius: var(--r-pill);
+  background: rgba(10, 16, 18, .82); color: #e9eeee;
+  font-size: var(--fs-12); backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .4);
+}
+.qt-capture .hintbar b { font-weight: 620; }
+.qt-capture .hintbar kbd {
+  font: 600 10px/1 var(--font-ui); padding: 3px 5px; border-radius: 4px;
+  background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .18); color: #fff;
+}
+.qt-capture .close {
+  position: absolute; right: 12px; top: 12px;
+  width: 28px; height: 28px; display: grid; place-items: center;
+  border: 1px solid rgba(255, 255, 255, .2); border-radius: 50%;
+  background: rgba(10, 16, 18, .6); color: #fff; cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.qt-capture .close svg { width: 14px; height: 14px; }
+
+/* ============================================================
+   Specs
+   ============================================================ */
+.specs { max-width: 1180px; margin: 0 auto; padding: 12px var(--sp-7) 40px; }
+.specs h2 { font-size: var(--fs-15); font-weight: 650; margin: 0 0 4px; letter-spacing: -.01em; }
+.specs .lede { margin: 0 0 20px; font-size: var(--fs-12); color: var(--ink-3); max-width: 74ch; line-height: 1.6; }
+.spec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 14px; align-items: start; }
+.spec-card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: 14px; box-shadow: var(--shadow-1); }
+.spec-card h3 { margin: 0 0 10px; font-size: var(--fs-12); font-weight: 650; letter-spacing: .03em; text-transform: uppercase; color: var(--ink-3); }
+.swatches { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.sw { display: flex; align-items: center; gap: 7px; font-size: var(--fs-11); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.sw i { width: 22px; height: 22px; border-radius: 5px; flex: none; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.sw code { font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
+
+.type-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: var(--fs-11); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.type-row:last-child { border-bottom: 0; }
+.type-row .sample { color: var(--ink); }
+
+table.spec { width: 100%; border-collapse: collapse; font-size: var(--fs-11); }
+table.spec th { text-align: left; font-weight: 620; color: var(--ink-3); padding: 5px 6px; border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+table.spec td { padding: 5px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+table.spec td.num { text-align: right; font-family: var(--font-mono); }
+table.spec tr:last-child td { border-bottom: 0; }
+table.spec .old { color: var(--danger); }
+table.spec .new { color: var(--ok); font-weight: 620; }
+.pass { color: var(--ok); font-weight: 620; }
+.fail { color: var(--danger); font-weight: 620; }
+
+.note { font-size: var(--fs-11); color: var(--ink-3); line-height: 1.6; margin: 8px 0 0; }
+.note code { font-family: var(--font-mono); font-size: 10px; background: var(--surface-2); padding: 1px 4px; border-radius: 3px; }
+
+.states { display: grid; gap: 9px; }
+.state-row { display: flex; align-items: center; gap: 8px; }
+.state-row > span:first-child { width: 62px; flex: none; font-size: 10px; color: var(--ink-3); font-family: var(--font-mono); }
+.btn-sample { height: 26px; padding: 0 12px; border-radius: var(--r-md); font-size: var(--fs-12); font-weight: 620; background: var(--accent); color: var(--accent-on); border: 0; }
+.btn-sample.h { background: var(--accent-strong); }
+.btn-sample.d { background: var(--surface-3); color: var(--ink-3); }
+.btn-sample.f { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 760px) {
+  .stage { padding: 20px 12px; overflow-x: auto; }
+  .board-bar { gap: 8px; padding: 8px 12px; }
+  .board-brand span { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="board-bar">
+  <div class="board-brand">
+    <strong>Quick Translate — 界面设计方案</strong>
+    <span>v0.2 · 640 × 440 · 1:1</span>
+  </div>
+
+  <div class="ctl-group">
+    <span class="ctl-label">视图</span>
+    <div class="board-seg" id="viewSeg">
+      <button data-view="translate" aria-pressed="true">翻译</button>
+      <button data-view="history" aria-pressed="false">历史</button>
+      <button data-view="settings" aria-pressed="false">设置</button>
+      <button data-view="capture" aria-pressed="false">截图浮层</button>
+    </div>
+  </div>
+
+  <div class="ctl-group">
+    <span class="ctl-label">主题</span>
+    <div class="board-seg" id="themeSeg">
+      <button data-theme="light" aria-pressed="true">亮色</button>
+      <button data-theme="dark" aria-pressed="false">暗色</button>
+    </div>
+  </div>
+
+  <label class="switch-mini"><input type="checkbox" id="guidesToggle" /> 标注</label>
+</div>
+
+<div class="stage">
+  <div class="win-wrap">
+    <div class="win" id="win"></div>
+    <div class="guides" id="guides" hidden>
+      <div class="gframe"></div>
+      <div class="gline" style="top:44px"><span>44 顶栏</span></div>
+      <div class="gline" style="top:88px"><span>44 语言条</span></div>
+      <div class="gline" style="top:388px"><span>52 操作条</span></div>
+    </div>
+  </div>
+</div>
+
+<section class="specs">
+  <h2>设计基础</h2>
+  <p class="lede">中性灰底承载内容，青绿只承担「可操作」这一种语义：主按钮、当前选中、焦点环、链接。除此之外不出现青色，避免强调色失效。所有辅助文字对比度不低于 4.5:1。</p>
+
+  <div class="spec-grid">
+    <div class="spec-card">
+      <h3>色彩</h3>
+      <div class="swatches">
+        <div class="sw"><i style="background:#0a7c82"></i><span>accent<br /><code>#0a7c82</code></span></div>
+        <div class="sw"><i style="background:#076468"></i><span>accent-strong<br /><code>#076468</code></span></div>
+        <div class="sw"><i style="background:#e4f2f2"></i><span>accent-soft<br /><code>#e4f2f2</code></span></div>
+        <div class="sw"><i style="background:#0f1719"></i><span>ink<br /><code>#0f1719</code></span></div>
+        <div class="sw"><i style="background:#4f6167"></i><span>ink-2<br /><code>#4f6167</code></span></div>
+        <div class="sw"><i style="background:#63757b"></i><span>ink-3<br /><code>#63757b</code></span></div>
+        <div class="sw"><i style="background:#f6f7f7"></i><span>bg<br /><code>#f6f7f7</code></span></div>
+        <div class="sw"><i style="background:#eef1f1"></i><span>surface-2<br /><code>#eef1f1</code></span></div>
+        <div class="sw"><i style="background:#ffffff"></i><span>surface<br /><code>#ffffff</code></span></div>
+        <div class="sw"><i style="background:#b03a2e"></i><span>danger<br /><code>#b03a2e</code></span></div>
+      </div>
+      <p class="note">分隔线统一用 <code>rgba(15,35,38,.09)</code>，比实色灰线更不抢视线；暗色下反转为 <code>rgba(255,255,255,.10)</code>。</p>
+    </div>
+
+    <div class="spec-card">
+      <h3>字体与字阶</h3>
+      <div class="type-row"><span class="sample" style="font-size:15px;font-weight:650">Quick Translate</span><span>15 / 650 · 品牌</span></div>
+      <div class="type-row"><span class="sample" style="font-size:14px">输入或粘贴要翻译的文本</span><span>14 / 400 · 正文</span></div>
+      <div class="type-row"><span class="sample" style="font-size:13px;font-weight:620">翻译</span><span>13 / 620 · 控件</span></div>
+      <div class="type-row"><span class="sample" style="font-size:12px;color:#4f6167">在线服务 · 原文将发送至 MyMemory</span><span>12 / 400 · 次级</span></div>
+      <div class="type-row"><span class="sample" style="font-size:11px;color:#63757b;letter-spacing:.06em">原文 / 译文</span><span>11 / 620 · 标签</span></div>
+      <p class="note">UI 字体 <code>Segoe UI Variable Text</code> 优先，数字（字数、耗时）用 <code>Cascadia Mono</code> 等宽，避免变宽跳动。</p>
+    </div>
+
+    <div class="spec-card">
+      <h3>间距与圆角</h3>
+      <table class="spec">
+        <tr><th>用途</th><th class="num">值</th></tr>
+        <tr><td>控件内边距</td><td class="num">8 / 12</td></tr>
+        <tr><td>卡片内边距</td><td class="num">10 / 11</td></tr>
+        <tr><td>区块间距</td><td class="num">10</td></tr>
+        <tr><td>页面左右留白</td><td class="num">14</td></tr>
+        <tr><td>圆角 · 控件</td><td class="num">5–7</td></tr>
+        <tr><td>圆角 · 卡片</td><td class="num">7–10</td></tr>
+        <tr><td>交互过渡</td><td class="num">120ms</td></tr>
+      </table>
+      <p class="note">640 宽的窗口里，14px 左右留白已足够呼吸感，再大就会压缩双栏文字宽度。</p>
+    </div>
+
+    <div class="spec-card">
+      <h3>垂直预算（关键修正）</h3>
+      <table class="spec">
+        <tr><th>区块</th><th class="num">旧</th><th class="num">新</th></tr>
+        <tr><td>应用头部（含导航）</td><td class="num old">104</td><td class="num new">44</td></tr>
+        <tr><td>页面内重复标题</td><td class="num old">40</td><td class="num new">0</td></tr>
+        <tr><td>语言 / 服务选择</td><td class="num old">56</td><td class="num new">44</td></tr>
+        <tr><td>服务提示（独立成行）</td><td class="num old">30</td><td class="num new">0</td></tr>
+        <tr><td>工作区可用高度</td><td class="num old">190</td><td class="num new">300</td></tr>
+        <tr><td>底部操作条</td><td class="num old">42</td><td class="num new">52</td></tr>
+        <tr><td><b>首屏合计</b></td><td class="num old">≈458</td><td class="num new">440</td></tr>
+      </table>
+      <p class="note">旧版首屏 ≈458 &gt; 440，主按钮落在可视区外。新版固定 140px 框架 + 300px 工作区，<b>「输入 → 翻译 → 复制」全程不滚动</b>。服务提示不再单独占行，改为操作条左侧的状态文本。</p>
+    </div>
+
+    <div class="spec-card">
+      <h3>对比度（WCAG AA）</h3>
+      <table class="spec">
+        <tr><th>前景 / 背景</th><th class="num">比值</th><th>结果</th></tr>
+        <tr><td>ink #0f1719 / #fff</td><td class="num">18.5</td><td class="pass">通过</td></tr>
+        <tr><td>ink-2 #4f6167 / #fff</td><td class="num">6.5</td><td class="pass">通过</td></tr>
+        <tr><td>ink-3 #63757b / #fff</td><td class="num">4.8</td><td class="pass">通过</td></tr>
+        <tr><td>白字 / accent #0a7c82</td><td class="num">5.0</td><td class="pass">通过</td></tr>
+        <tr><td>danger / danger-soft</td><td class="num">5.4</td><td class="pass">通过</td></tr>
+        <tr><td>旧 #809096 11px / #fff</td><td class="num fail">3.0</td><td class="fail">不通过</td></tr>
+      </table>
+      <p class="note">最后一行是现状问题：字数计数器 11px 配 #809096 未达 4.5:1，新版改用 ink-3 并通过。</p>
+    </div>
+
+    <div class="spec-card">
+      <h3>按钮状态</h3>
+      <div class="states">
+        <div class="state-row"><span>default</span><button class="btn-sample">翻译</button></div>
+        <div class="state-row"><span>hover</span><button class="btn-sample h">翻译</button></div>
+        <div class="state-row"><span>focus</span><button class="btn-sample f">翻译</button></div>
+        <div class="state-row"><span>disabled</span><button class="btn-sample d" disabled>翻译</button></div>
+      </div>
+      <p class="note">按下位移 0.5px 且移除投影，模拟物理按压；焦点环 2px + 2px 偏移，不与 hover 填充混淆。</p>
+    </div>
+  </div>
+</section>
+
+<script>
+const win = document.getElementById("win");
+const guides = document.getElementById("guides");
+
+const ICON = {
+  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l.9-1.6A1.5 1.5 0 0 1 9.9 3.7h4.2a1.5 1.5 0 0 1 1.3.7l.9 1.6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.2" r="3.2"/></svg>',
+  swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8h11l-3-3M17 16H6l3 3"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="10" height="11" rx="2"/><path d="M15 6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v8"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"/></svg>',
+  clear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5.5M12 16.4v.1"/></svg>',
+  retranslate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.6 5.9"/><path d="M20 5.5V11h-5.5"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l.8 12.1A1.5 1.5 0 0 0 8.8 20.5h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3.5v2M12 18.5v2M4.9 7.8l1.7 1M17.4 15.2l1.7 1M4.9 16.2l1.7-1M17.4 8.8l1.7-1"/></svg>'
+};
+
+const url = new URLSearchParams(location.search);
+const state = { view: url.get("view") ?? "translate", theme: url.get("theme") ?? "light", demo: url.get("demo") ?? "ready" };
+
+function topbar() {
+  const views = [["translate", "翻译"], ["history", "历史"], ["settings", "设置"]];
+  return `
+    <header class="qt-topbar">
+      <div class="qt-brand"><span class="qt-mark">译</span><span class="qt-brand-name">Quick Translate</span></div>
+      <div class="qt-seg" role="tablist">
+        ${views.map(([id, label]) =>
+          `<button role="tab" aria-selected="${state.view === id}" data-goview="${id}">${label}</button>`).join("")}
+      </div>
+      <div class="qt-topbar-actions">
+        <button class="qt-icon-btn" title="截图翻译 · Ctrl+Shift+S" aria-label="截图翻译">${ICON.camera}</button>
+      </div>
+    </header>`;
+}
+
+function langbar() {
+  return `
+    <div class="qt-langbar">
+      <div class="qt-lang"><select aria-label="源语言"><option>英语</option><option>自动检测</option></select></div>
+      <button class="qt-swap" aria-label="互换语言">${ICON.swap}</button>
+      <div class="qt-lang"><select aria-label="目标语言"><option>中文（简体）</option><option>日语</option></select></div>
+      <div class="qt-provider">
+        <span class="dot"></span>
+        <select aria-label="翻译服务"><option>MyMemory</option><option>DeepL</option><option>本地模型</option></select>
+      </div>
+    </div>`;
+}
+
+function alertBox() {
+  if (state.demo === "error") {
+    return `<div class="qt-alert" role="alert">${ICON.alert}
+      <span class="msg">网络连接失败，请检查网络后重试。</span>
+      <button type="button">重试</button></div>`;
+  }
+  if (state.demo === "over") {
+    return `<div class="qt-alert" role="alert">${ICON.alert}
+      <span class="msg">原文 532 字节，超出 MyMemory 的 500 字节上限 32 字节。</span>
+      <button type="button">换服务</button></div>`;
+  }
+  return "";
+}
+
+const SRC_TEXT = "The quick brown fox jumps over the lazy dog, then pauses to consider whether the effort was worth it.";
+const DST_TEXT = "敏捷的棕色狐狸跳过了懒狗，随后停下来思考这一举动是否值得。";
+
+function translateView() {
+  const loading = state.demo === "loading";
+  const over = state.demo === "over";
+  const hasResult = state.demo !== "empty" && !loading;
+
+  const sourceBody = `<div class="qt-pane-body">
+      <textarea spellcheck="false" placeholder="输入或粘贴文本，Ctrl+Enter 翻译">${over ? SRC_TEXT.repeat(2) : SRC_TEXT}</textarea>
+    </div>`;
+
+  let resultBody;
+  if (loading) {
+    resultBody = `<div class="qt-pane-body"><div class="qt-skeleton"><i style="width:92%"></i><i style="width:100%"></i><i style="width:86%"></i><i style="width:64%"></i></div></div>`;
+  } else if (hasResult) {
+    resultBody = `<div class="qt-pane-body"><div class="qt-output">${DST_TEXT}</div></div>`;
+  } else {
+    resultBody = `<div class="qt-pane-body"><div class="qt-output is-empty">
+        <span>译文将显示在这里</span>
+        <span class="hint">按 Ctrl + Enter 立即翻译</span>
+      </div></div>`;
+  }
+
+  return `${topbar()}${langbar()}
+    <div class="qt-workspace">
+      <section class="qt-pane">
+        <div class="qt-pane-head">
+          <span class="qt-pane-title">原文</span>
+          <div class="qt-pane-tools">
+            <button class="qt-mini" aria-label="清空原文">${ICON.clear}</button>
+          </div>
+        </div>
+        ${sourceBody}
+        <div class="qt-pane-foot">
+          <span class="${over ? "qt-over" : ""}">${over ? "532 / 500 字节 · 超出 32" : "103 / 500 字节"}</span>
+        </div>
+      </section>
+
+      <section class="qt-pane">
+        <div class="qt-pane-head">
+          <span class="qt-pane-title">译文</span>
+          <div class="qt-pane-tools">
+            <button class="qt-mini" ${hasResult ? "" : "disabled"} data-state="${hasResult ? "done" : ""}">${ICON.copy}${hasResult ? "复制" : "复制"}</button>
+          </div>
+        </div>
+        ${resultBody}
+        <div class="qt-pane-foot">
+          <span>${hasResult ? "MyMemory · 412 ms" : "—"}</span>
+          <span class="right">${hasResult ? '<span class="qt-saved">已复制</span>' : ""}</span>
+        </div>
+      </section>
+    </div>
+    ${alertBox()}
+    <footer class="qt-actionbar">
+      <div class="qt-status">
+        <span class="dot ${over ? "" : ""}"></span>
+        <span>在线服务 · 原文将发送至 MyMemory</span>
+      </div>
+      <div class="qt-action-right">
+        <span class="qt-kbd-hint"><kbd>Ctrl</kbd><kbd>Enter</kbd></span>
+        <button class="qt-btn qt-btn-primary" ${over || loading ? "disabled" : ""}>
+          ${loading ? '<span class="qt-spinner"></span>翻译中…' : "翻译"}
+        </button>
+      </div>
+    </footer>`;
+}
+
+function historyView() {
+  const items = [
+    ["The quick brown fox jumps over the lazy dog.", "敏捷的棕色狐狸跳过了懒狗。", "MyMemory", "今天 14:22", ""],
+    ["Ship it on Friday, nobody will notice.", "周五发布吧，反正没人会注意。", "DeepL", "今天 11:08", "updated"],
+    ["请求超时，请稍后重试。", "Request timed out, please try again later.", "MyMemory", "昨天 21:40", ""],
+    ["The build failed because the lockfile was stale.", "构建失败，因为锁文件已过期。", "MyMemory", "昨天 09:15", ""],
+    ["不要在生产环境里直接改数据库。", "Do not edit the database directly in production.", "DeepL", "11 月 6 日", ""]
+  ];
+  return `${topbar()}
+    <div class="qt-view">
+      <div class="qt-toolrow">
+        <label class="qt-search">${ICON.search}<input placeholder="搜索原文或译文" /></label>
+        <span class="count">24 条</span>
+        <span class="spacer"></span>
+        <button class="qt-btn-ghost danger">清空</button>
+      </div>
+      <div class="qt-list">
+        ${items.map(([src, dst, prov, time, tag]) => `
+          <article class="qt-card" tabindex="0">
+            <p class="src">${src}</p>
+            <p class="dst">${dst}</p>
+            <div class="row">
+              <span class="meta">${prov}</span>
+              <span class="meta">·</span>
+              <span class="meta">${time}</span>
+              ${tag === "updated" ? '<span class="qt-tag updated">已更新</span>' : ""}
+              <div class="ops">
+                <button class="qt-mini" aria-label="重新翻译">${ICON.retranslate}</button>
+                <button class="qt-mini" aria-label="复制译文">${ICON.copy}</button>
+                <button class="qt-mini" aria-label="删除">${ICON.trash}</button>
+              </div>
+            </div>
+          </article>`).join("")}
+      </div>
+    </div>`;
+}
+
+function settingsView() {
+  return `${topbar()}
+    <div class="qt-scroll">
+      <section class="qt-group">
+        <div class="qt-group-head"><h3>翻译服务</h3><span class="desc">在线服务会收到原文</span></div>
+        <div class="qt-row">
+          <div class="grow"><div class="label">MyMemory</div><div class="sub">免费 · 每次 500 字节 · 归属 Translated</div></div>
+          <div class="ops"><span class="qt-badge ok">已就绪</span><button class="qt-btn-ghost">编辑</button></div>
+        </div>
+        <div class="qt-row">
+          <div class="grow"><div class="label">DeepL</div><div class="sub">需要 API 密钥 · 密钥存于 Windows 凭据管理器</div></div>
+          <div class="ops"><span class="qt-badge warn">待配置</span><button class="qt-btn-ghost">编辑</button></div>
+        </div>
+        <div class="qt-row">
+          <div class="grow"><div class="label">本地模型</div><div class="sub">文本不离开本机</div></div>
+          <div class="ops"><span class="qt-badge ok">已就绪</span><button class="qt-btn-ghost">编辑</button></div>
+        </div>
+      </section>
+
+      <section class="qt-group">
+        <div class="qt-group-head"><h3>隐私与历史</h3></div>
+        <div class="qt-row">
+          <div class="grow"><div class="label">仅本地模式</div><div class="sub">强制使用本地服务，原文不发送至网络</div></div>
+          <button class="qt-switch" role="switch" aria-checked="false" aria-label="仅本地模式"></button>
+        </div>
+        <div class="qt-row">
+          <div class="grow"><div class="label">保存翻译历史</div><div class="sub">关闭后不再新增记录，已有记录保留</div></div>
+          <button class="qt-switch" role="switch" aria-checked="true" aria-label="保存翻译历史"></button>
+        </div>
+      </section>
+
+      <section class="qt-group">
+        <div class="qt-group-head"><h3>快捷键</h3></div>
+        <div class="qt-row">
+          <div class="grow"><div class="label">全局唤起</div></div>
+          <div class="qt-kbd-row"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd></div>
+        </div>
+        <div class="qt-row">
+          <div class="grow"><div class="label">截图翻译</div></div>
+          <div class="qt-kbd-row"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>S</kbd></div>
+        </div>
+      </section>
+    </div>`;
+}
+
+function captureView() {
+  return `
+    <div class="qt-capture">
+      <div class="shot"></div>
+      <div class="veil"></div>
+      <div class="qt-sel">
+        <i class="corner c1"></i><i class="corner c2"></i><i class="corner c3"></i><i class="corner c4"></i>
+        <span class="dim">328 × 156</span>
+      </div>
+      <button class="close" aria-label="取消截图">${ICON.close}</button>
+      <div class="hintbar">
+        <span>拖动选择翻译区域</span>
+        <kbd>Esc</kbd><span>取消</span>
+        <kbd>Enter</kbd><span>确认</span>
+      </div>
+    </div>`;
+}
+
+function render() {
+  document.documentElement.dataset.theme = state.theme;
+  win.innerHTML =
+    state.view === "translate" ? translateView() :
+    state.view === "history" ? historyView() :
+    state.view === "settings" ? settingsView() : captureView();
+  guides.hidden = !document.getElementById("guidesToggle").checked;
+  document.querySelectorAll("[data-goview]").forEach(btn => {
+    btn.addEventListener("click", () => { state.view = btn.dataset.goview; syncBar(); render(); });
+  });
+}
+
+function syncBar() {
+  document.querySelectorAll("#viewSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.view === state.view)));
+  document.querySelectorAll("#themeSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.theme === state.theme)));
+}
+
+document.getElementById("viewSeg").addEventListener("click", e => {
+  const btn = e.target.closest("button"); if (!btn) return;
+  state.view = btn.dataset.view;
+  if (state.view !== "translate") state.demo = "ready";
+  syncBar(); render();
+});
+document.getElementById("themeSeg").addEventListener("click", e => {
+  const btn = e.target.closest("button"); if (!btn) return;
+  state.theme = btn.dataset.theme; syncBar(); render();
+});
+document.getElementById("guidesToggle").addEventListener("change", render);
+
+// Demo state cycling via keyboard: 1 ready · 2 empty · 3 loading · 4 error · 5 over
+window.addEventListener("keydown", e => {
+  const map = { "1": "ready", "2": "empty", "3": "loading", "4": "error", "5": "over" };
+  if (map[e.key]) { state.view = "translate"; state.demo = map[e.key]; syncBar(); render(); }
+});
+
+render();
+</script>
+</body>
+</html>
