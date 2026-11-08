@@ -1,6 +1,6 @@
 [package]
 name = "quick_translate_lib"
-version = "0.1.1"
+version = "0.1.2"
 description = "Quick Translate desktop application"
 authors = ["Quick Translate"]
 edition = "2021"
